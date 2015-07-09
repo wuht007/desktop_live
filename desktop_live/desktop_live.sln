@@ -5,6 +5,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "desktop_live", "desktop_liv
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "capture", "capture\capture.vcxproj", "{FA54D9CF-0D58-4295-B635-F50644D22C7E}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "log", "log\log.vcxproj", "{9BD5062A-A786-49B6-8E4E-7EDF321D916F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
@@ -19,6 +21,10 @@ Global
 		{FA54D9CF-0D58-4295-B635-F50644D22C7E}.Debug|Win32.Build.0 = Debug|Win32
 		{FA54D9CF-0D58-4295-B635-F50644D22C7E}.Release|Win32.ActiveCfg = Release|Win32
 		{FA54D9CF-0D58-4295-B635-F50644D22C7E}.Release|Win32.Build.0 = Release|Win32
+		{9BD5062A-A786-49B6-8E4E-7EDF321D916F}.Debug|Win32.ActiveCfg = Debug|Win32
+		{9BD5062A-A786-49B6-8E4E-7EDF321D916F}.Debug|Win32.Build.0 = Debug|Win32
+		{9BD5062A-A786-49B6-8E4E-7EDF321D916F}.Release|Win32.ActiveCfg = Release|Win32
+		{9BD5062A-A786-49B6-8E4E-7EDF321D916F}.Release|Win32.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

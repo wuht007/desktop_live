@@ -1,25 +1,28 @@
 #ifndef __CAPTURE_H__
 #define __CAPTURE_H__
 
-typedef struct fifo
-{
-	struct fifo *next;
-	struct fifo *front;
-	int size;
-	void *data;
-}FIFO;
+#define BUILDING_DLL 1
 
-/*
+#if BUILDING_DLL
+# define DLLIMPORT __declspec (dllexport)
+#else
+# define DLLIMPORT __declspec (dllimport)
+#endif
+
+typedef unsigned char uint8_t;
+
 #ifdef __cplusplus
-#define extern "C"
+extern "C"
 {
 #endif
-*/
-extern int start_capture(FIFO *video_fifo_head, FIFO *audio_fifo_head, void *log_file);
-extern int stop_capture();
-/*
+
+DLLIMPORT int start_capture(void *log_file);
+DLLIMPORT int get_video_frame(void **data, unsigned long *size);
+DLLIMPORT int get_audio_frame(void **data, unsigned long *size);
+DLLIMPORT int stop_capture();
+
 #ifdef __cplusplus
 };
 #endif
-*/
+
 #endif //__CAPTURE_H__
