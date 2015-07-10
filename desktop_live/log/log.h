@@ -52,7 +52,7 @@ typedef struct log
 	struct logpriv log_priv;
 }LOG;
 
-DLLIMPORT LOG *init_log(unsigned int level, unsigned int out_way);
+DLLIMPORT LOG *init_log(char *file_name, unsigned int level, unsigned int out_way);
 DLLIMPORT int print_log(LOG *log, unsigned int log_level, char *log_str);
 DLLIMPORT void free_log();
 

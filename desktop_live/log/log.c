@@ -21,6 +21,7 @@ int print_log(LOG *log, unsigned int log_level, char *log_str)
 	if (log->log_priv.out_way == OUT_FILE)
 	{
 		EnterCriticalSection(&log->log_priv.cs);
+		fprintf(log->log_priv.file,"%d ",log_level);
 		ret = fwrite(log_str, strlen((const char *)log_str), 1, log->log_priv.file);
 		fflush(log->log_priv.file);
 		LeaveCriticalSection(&log->log_priv.cs);
@@ -37,9 +38,8 @@ int print_log(LOG *log, unsigned int log_level, char *log_str)
 	return 0;
 }
 
-LOG *init_log(unsigned int log_level, unsigned int out_way)
+LOG *init_log(char *file_name, unsigned int log_level, unsigned int out_way)
 {
-	char *file_name = "d:\\desktop_live_log.txt";
 	if (NULL != g_log)
 	{
 		//不推荐使用init_log获取log,请使用传参的方式

@@ -14,7 +14,13 @@ int main(int argc, char **argv)
 	uint8_t *data = NULL;
 	unsigned long size = 0;
 	int times = 0;
-	log = init_log(0, 0); 
+	int log_level;
+	int out_way;
+	log_level = GetPrivateProfileIntA("log", 
+		"level", 0, "config.ini");
+	out_way = GetPrivateProfileIntA("log", 
+		"out_way", 0, "config.ini");
+	log = init_log("D:\\desktop_live_log.txt", log_level, out_way); 
 	if (log == NULL)
 	{
 		ret = -1;

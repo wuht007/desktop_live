@@ -7,6 +7,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "capture", "capture\capture.
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "log", "log\log.vcxproj", "{9BD5062A-A786-49B6-8E4E-7EDF321D916F}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "encode", "encode\encode.vcxproj", "{AB7F5642-6A19-477A-97A9-A75869F402A3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
@@ -25,6 +27,10 @@ Global
 		{9BD5062A-A786-49B6-8E4E-7EDF321D916F}.Debug|Win32.Build.0 = Debug|Win32
 		{9BD5062A-A786-49B6-8E4E-7EDF321D916F}.Release|Win32.ActiveCfg = Release|Win32
 		{9BD5062A-A786-49B6-8E4E-7EDF321D916F}.Release|Win32.Build.0 = Release|Win32
+		{AB7F5642-6A19-477A-97A9-A75869F402A3}.Debug|Win32.ActiveCfg = Debug|Win32
+		{AB7F5642-6A19-477A-97A9-A75869F402A3}.Debug|Win32.Build.0 = Debug|Win32
+		{AB7F5642-6A19-477A-97A9-A75869F402A3}.Release|Win32.ActiveCfg = Release|Win32
+		{AB7F5642-6A19-477A-97A9-A75869F402A3}.Release|Win32.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

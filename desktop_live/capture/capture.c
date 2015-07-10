@@ -92,7 +92,7 @@ void get_screen_info(SCREEN *screen, void *log_file)
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_INFO, log_str);
+	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
 	screen->width = right - left;
 	screen->height = bottom - top;
@@ -120,7 +120,7 @@ void get_screen_info(SCREEN *screen, void *log_file)
 	DeleteObject(bitmap);
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_INFO, log_str);
+	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 }
 
 //返回值:0=成功 其他=失败
@@ -132,9 +132,9 @@ int init_video_param(SCREEN *screen, VIDEO *video, void *log_file)
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_INFO, log_str);
+	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
-	video->fps = GetPrivateProfileIntA("video", "fps", 10, "capture_config.ini");
+	video->fps = GetPrivateProfileIntA("video", "fps", 10, "config.ini");
 	video->yuv_len = screen->bitmap_width * \
 						screen->bitmap_height*2;
 	video->yuv = (uint8_t *)malloc(video->yuv_len);
@@ -154,7 +154,7 @@ int init_video_param(SCREEN *screen, VIDEO *video, void *log_file)
 	}
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_INFO, log_str);
+	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
 	ret = 0;
 	return ret;
@@ -330,7 +330,7 @@ unsigned int __stdcall video_capture_proc(void *p)
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_INFO, log_str);
+	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
 	get_screen_info(&screen, log_file);
 	ret = init_video_param(&screen ,&video, log_file);
@@ -370,7 +370,7 @@ unsigned int __stdcall video_capture_proc(void *p)
 	free(video.rgba);
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_INFO, log_str);
+	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
 	return 0;
 }
@@ -382,19 +382,19 @@ int init_audio_param(AUDIO *audio, WAVEFORMATEX *waveformat, void *log_file)
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_INFO, log_str);
+	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
 	audio->channels = GetPrivateProfileIntA("audio", 
-												"channels", 2, "capture_config.ini");
+												"channels", 2, "config.ini");
 	audio->bits_per_sample = GetPrivateProfileIntA("audio", 
-														"bits_per_sample", 16, "capture_config.ini");
+														"bits_per_sample", 16, "config.ini");
 	audio->samples_per_sec = GetPrivateProfileIntA("audio", 
-														"samples_per_sec", 48000, "capture_config.ini");
+														"samples_per_sec", 48000, "config.ini");
 	audio->avg_bytes_per_sec = GetPrivateProfileIntA("audio", 
-														"avg_bytes_per_sec", 48000, "capture_config.ini");
+														"avg_bytes_per_sec", 48000, "config.ini");
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_INFO, log_str);
+	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
 	ret = 0;
 	return 0;
@@ -409,7 +409,7 @@ int start_wave(AUDIO *audio, WAVEFORMATEX *waveformat,
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_INFO, log_str);
+	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 	audio->pcm_len = 0;;
 	audio->pcm = (uint8_t *)malloc(size * HDRCOUNT);
 	if (NULL == audio->pcm)
@@ -469,7 +469,7 @@ int start_wave(AUDIO *audio, WAVEFORMATEX *waveformat,
 	}
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_INFO, log_str);
+	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
 	ret = 0;
 	return ret;
@@ -490,7 +490,7 @@ unsigned int __stdcall audio_capture_proc(void *p)
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_INFO, log_str);
+	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
 	ret = init_audio_param(&audio, &waveformat, log_file);
 	if (0 != ret)
@@ -567,7 +567,7 @@ unsigned int __stdcall audio_capture_proc(void *p)
 	}
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_INFO, log_str);
+	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
 	ret = 0;
 	return 0;
@@ -582,7 +582,7 @@ int start_capture(void *log_file)
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_INFO, log_str);
+	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
 	if (gv != NULL)
 	{
@@ -621,7 +621,7 @@ int start_capture(void *log_file)
 	}
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_INFO, log_str);
+	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
 	ret = 0;
 	return ret;
@@ -665,7 +665,7 @@ int stop_capture()
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)gv->log_file, LOG_INFO, log_str);
+	print_log((LOG *)gv->log_file, LOG_DEBUG, log_str);
 	if (NULL == gv)
 	{
 		ret = -1;
@@ -675,16 +675,31 @@ int stop_capture()
 	gv->stop = 1;
 
 	for (i=0; i<2; i++)
-	{	
+	{
+		struct list_head *plist = NULL;
 		WaitForSingleObject(gv->handler[i],INFINITE);
 		DeleteCriticalSection(&gv->cs[i]);
+
+		EnterCriticalSection(&gv->cs[i]);
+		if (0 == list_empty(&gv->head[i]))
+		{
+			list_for_each(plist, &gv->head[i]) 
+			{
+				NODE *node = list_entry(plist, struct node, list);
+				list_del(plist);
+				free(node->data);
+				free(node);
+			}
+		}
+		LeaveCriticalSection(&gv->cs[i]);
 	}
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)gv->log_file, LOG_INFO, log_str);
+	print_log((LOG *)gv->log_file, LOG_DEBUG, log_str);
 
 	if (gv)
 		free(gv);
+	gv = NULL;
 	ret = 0;
 	return ret;
 }
