@@ -68,12 +68,13 @@ typedef struct global_variable
 	HANDLE handler[2];
 	int stop;
 	void *log_file;
+	char config_file[MAX_PATH];
 	RTL_CRITICAL_SECTION cs[2];
 	struct list_head head[2];
 
 }GV;
 
-GV *gv = NULL;
+static GV *gv = NULL;
 
 //描述:获取屏幕的宽高，屏幕位图的宽高、深度、通道数、一帧位图的长度
 void get_screen_info(SCREEN *screen, void *log_file)
@@ -125,7 +126,7 @@ void get_screen_info(SCREEN *screen, void *log_file)
 
 //返回值:0=成功 其他=失败
 //描述:初始化配置文件中的视频参数
-int init_video_param(SCREEN *screen, VIDEO *video, void *log_file)
+int init_video_param(GV *global_var, SCREEN *screen, VIDEO *video, void *log_file)
 {
 	int ret = -1;
 
@@ -134,7 +135,7 @@ int init_video_param(SCREEN *screen, VIDEO *video, void *log_file)
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
 	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
-	video->fps = GetPrivateProfileIntA("video", "fps", 10, "config.ini");
+	video->fps = GetPrivateProfileIntA("video", "fps", 10, global_var->config_file);
 	video->yuv_len = screen->bitmap_width * \
 						screen->bitmap_height*2;
 	video->yuv = (uint8_t *)malloc(video->yuv_len);
@@ -333,7 +334,7 @@ unsigned int __stdcall video_capture_proc(void *p)
 	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
 	get_screen_info(&screen, log_file);
-	ret = init_video_param(&screen ,&video, log_file);
+	ret = init_video_param(global_var, &screen ,&video, log_file);
 	if (ret != 0)
 	{
 		ret = -1;
@@ -376,7 +377,7 @@ unsigned int __stdcall video_capture_proc(void *p)
 }
 
 //描述:从配置文件中读出音频采集的基本参数，没读到采用默认值
-int init_audio_param(AUDIO *audio, WAVEFORMATEX *waveformat, void *log_file)
+int init_audio_param(GV *global_var, AUDIO *audio, WAVEFORMATEX *waveformat, void *log_file)
 {
 	int ret = 0;
 	char log_str[1024] = {0};
@@ -385,13 +386,13 @@ int init_audio_param(AUDIO *audio, WAVEFORMATEX *waveformat, void *log_file)
 	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
 	audio->channels = GetPrivateProfileIntA("audio", 
-												"channels", 2, "config.ini");
+												"channels", 2, global_var->config_file);
 	audio->bits_per_sample = GetPrivateProfileIntA("audio", 
-														"bits_per_sample", 16, "config.ini");
+														"bits_per_sample", 16, global_var->config_file);
 	audio->samples_per_sec = GetPrivateProfileIntA("audio", 
-														"samples_per_sec", 48000, "config.ini");
+														"samples_per_sec", 48000, global_var->config_file);
 	audio->avg_bytes_per_sec = GetPrivateProfileIntA("audio", 
-														"avg_bytes_per_sec", 48000, "config.ini");
+														"avg_bytes_per_sec", 48000, global_var->config_file);
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
 	print_log((LOG *)log_file, LOG_DEBUG, log_str);
@@ -400,6 +401,8 @@ int init_audio_param(AUDIO *audio, WAVEFORMATEX *waveformat, void *log_file)
 	return 0;
 }
 
+//返回值 0=成功 其他=失败
+//描述:初始化并且开启wave采集
 int start_wave(AUDIO *audio, WAVEFORMATEX *waveformat, 
 				WAVEHDR **wavehdr, HWAVEIN *wavein, int HDRCOUNT, void *log_file)
 {
@@ -475,6 +478,8 @@ int start_wave(AUDIO *audio, WAVEFORMATEX *waveformat,
 	return ret;
 }
 
+//返回值 0=成功 其他=失败
+//描述:音频采集主逻辑
 unsigned int __stdcall audio_capture_proc(void *p)
 {
 	int ret = 0, i = 0;
@@ -492,7 +497,7 @@ unsigned int __stdcall audio_capture_proc(void *p)
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
 	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
-	ret = init_audio_param(&audio, &waveformat, log_file);
+	ret = init_audio_param(global_var, &audio, &waveformat, log_file);
 	if (0 != ret)
 	{
 		ret = -2;
@@ -575,7 +580,7 @@ unsigned int __stdcall audio_capture_proc(void *p)
 
 //返回值 0=成功 其他=失败
 //描述:初始化全局变量gv，开启两个线程采集视频和音频
-int start_capture(void *log_file)
+int start_capture(void *log_file, char *config_file)
 {
 	int ret = 0;
 	int i = 0;
@@ -599,6 +604,7 @@ int start_capture(void *log_file)
 	memset(gv, 0, sizeof(GV));
 	gv->stop = 0;
 	gv->log_file = log_file;
+	memcpy(gv->config_file, config_file, strlen(config_file));
 
 	for (i=0; i<2; i++)
 	{
@@ -627,6 +633,8 @@ int start_capture(void *log_file)
 	return ret;
 }
 
+//返回值 0=成功 其他=失败
+//描述:获取一帧采集视频数据
 int get_video_frame(void **data, unsigned long *size)
 {
 	int ret = 0;
@@ -643,6 +651,8 @@ int get_video_frame(void **data, unsigned long *size)
 	return ret;
 }
 
+//返回值 0=成功 其他=失败
+//描述:获取一帧采集音频数据
 int get_audio_frame(void **data, unsigned long *size)
 {
 	int ret = 0;
@@ -659,6 +669,8 @@ int get_audio_frame(void **data, unsigned long *size)
 	return ret;
 }
 
+//返回值 0=成功 其他=失败
+//描述:停止采集
 int stop_capture()
 {
 	int ret = 0, i = 0;
@@ -678,10 +690,9 @@ int stop_capture()
 	{
 		struct list_head *plist = NULL;
 		WaitForSingleObject(gv->handler[i],INFINITE);
-		DeleteCriticalSection(&gv->cs[i]);
 
 		EnterCriticalSection(&gv->cs[i]);
-		if (0 == list_empty(&gv->head[i]))
+		while (0 == list_empty(&gv->head[i]))
 		{
 			list_for_each(plist, &gv->head[i]) 
 			{
@@ -689,9 +700,11 @@ int stop_capture()
 				list_del(plist);
 				free(node->data);
 				free(node);
+				break;
 			}
 		}
 		LeaveCriticalSection(&gv->cs[i]);
+		DeleteCriticalSection(&gv->cs[i]);
 	}
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);

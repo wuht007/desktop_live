@@ -1,10 +1,12 @@
 #include "capture.h"
 #include "log.h"
+#include "encode.h"
 #include <stdio.h>
 #include <stdlib.h>
 
 #pragma comment(lib, "capture.lib")
 #pragma comment(lib, "log.lib")
+#pragma comment(lib, "encode.lib")
 
 int main(int argc, char **argv)
 {
@@ -12,22 +14,31 @@ int main(int argc, char **argv)
 	LOG *log;
 	char log_str[1024];
 	uint8_t *data = NULL;
+	char *config_file = "E:\\desktop_live\\desktop_live\\lib\\config.ini";
+	char *log_file = "D:\\desktop_live_log.txt";
 	unsigned long size = 0;
 	int times = 0;
 	int log_level;
 	int out_way;
 	log_level = GetPrivateProfileIntA("log", 
-		"level", 0, "config.ini");
+		"level", 0, config_file);
 	out_way = GetPrivateProfileIntA("log", 
-		"out_way", 0, "config.ini");
-	log = init_log("D:\\desktop_live_log.txt", log_level, out_way); 
+		"out_way", 0, config_file);
+	log = init_log(log_file , log_level, out_way); 
 	if (log == NULL)
 	{
 		ret = -1;
 		return ret;
 	}
 
-	ret = start_capture(log);
+	ret = start_encode(log, config_file);
+	if (0 != ret)
+	{
+		printf("start encode failed\n");
+		return -1;
+	}
+
+	ret = start_capture(log, config_file);
 	if (0 != ret)
 	{
 		printf("start capture failed\n");
@@ -49,6 +60,8 @@ int main(int argc, char **argv)
 			free(data);
 		}
 	}
+
+	stop_encode();
 
 	stop_capture();
 

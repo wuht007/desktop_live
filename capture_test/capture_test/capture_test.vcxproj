@@ -40,7 +40,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
     <LibraryPath>E:\desktop_live\desktop_live\lib;$(LibraryPath)</LibraryPath>
-    <IncludePath>E:\desktop_live\desktop_live\log;E:\desktop_live\desktop_live\capture;$(IncludePath)</IncludePath>
+    <IncludePath>E:\desktop_live\desktop_live\log;E:\desktop_live\desktop_live\capture;E:\desktop_live\desktop_live\encode;$(IncludePath)</IncludePath>
     <OutDir>$(SolutionDir)$(Configuration)\..\..\desktop_live\lib</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
