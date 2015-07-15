@@ -78,6 +78,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="encode.h" />
+    <ClInclude Include="list.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="encode.c" />

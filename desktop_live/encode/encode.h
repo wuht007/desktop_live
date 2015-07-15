@@ -14,9 +14,9 @@ extern "C"
 {
 #endif
 
-DLLIMPORT int start_encode(void *log_file, char *config_file, char *record_file, bool record);
-DLLIMPORT int get_video_packet(void **data, unsigned long *size, long long pts, long long dts);
-DLLIMPORT int get_audio_packet(void **data, unsigned long *size, long long pts, long long dts);
+DLLIMPORT int start_encode(void *log_file, char *config_file, char *record_file, int record);
+DLLIMPORT int get_video_packet(void **data, unsigned long *size, long *pts, long *dts);
+DLLIMPORT int get_audio_packet(void **data, unsigned long *size, long *pts, long *dts);
 DLLIMPORT int stop_encode();
 
 #ifdef __cplusplus

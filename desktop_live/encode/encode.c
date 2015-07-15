@@ -18,6 +18,19 @@ extern "C"
 #endif
 
 #pragma comment(lib, "log.lib")
+#pragma comment(lib, "capture.lib")
+#pragma comment(lib, "Winmm.lib")
+#pragma comment(lib, "avformat.lib")
+#pragma comment(lib, "avcodec.lib")
+#pragma comment(lib, "avutil.lib")
+
+#ifndef MIN
+#  define MIN(a,b)  ((a) > (b) ? (b) : (a))
+#endif
+
+#ifndef MAX
+#  define MAX(a,b)  ((a) < (b) ? (b) : (a))
+#endif
 
 typedef struct 
 {
@@ -33,6 +46,7 @@ typedef struct
 	int height;
 	int fps;
 	int bit_rate;
+	long count;
 
 	//audio
 	AVCodecContext *audio_codec_ctx;
@@ -43,7 +57,17 @@ typedef struct
 	int samples_per_sec;
 	int channels;
 	int avg_bytes_per_sec;
+	long audio_pts;
 }ENCODER;
+
+typedef struct node
+{
+	uint8_t *data;
+	unsigned long size;
+	long pts;
+	long dts;
+	struct list_head list;
+}NODE;
 
 typedef struct global_variable
 {
@@ -54,9 +78,9 @@ typedef struct global_variable
 	void *log_file;
 	char config_file[MAX_PATH];
 	char record_file[MAX_PATH];
-	bool record;
-	RTL_CRITICAL_SECTION cs;
-	struct list_head head;
+	int record;
+	RTL_CRITICAL_SECTION cs[2];
+	struct list_head head[2];
 }GV;
 
 static GV *gv = NULL;
@@ -85,6 +109,8 @@ int init_encoder(GV *global_var, ENCODER *encoder, void *log)
 	encoder->avg_bytes_per_sec = GetPrivateProfileIntA("audio", 
 		"avg_bytes_per_sec", 48000, global_var->config_file);
 
+	encoder->count = 0;
+	encoder->audio_pts = 0;
 	av_register_all();
 
 	//申请输出格式上下文
@@ -270,11 +296,81 @@ failed:
 	return ret;
 }
 
+//返回值 0=成功 其他=失败
+//描述:把数据存入队列（一个链表）
+//注意:线程不安全，调用前后需加锁解锁
+static int enqueue(struct list_head *head, uint8_t *data, unsigned long size, long pts, long dts)
+{
+	int ret = 0;
+
+	NODE *node = (NODE *)malloc(sizeof(NODE));
+	if (NULL == node)
+	{
+		ret = -1;
+		return ret;
+	}
+
+	memset(node, 0, sizeof(NODE));
+	node->data = (uint8_t *)malloc(size);
+	if (NULL == node->data)
+	{
+		free(node);
+		ret = -2;
+		return ret;
+	}
+	memcpy(node->data, data, size);
+	node->size = size;
+	node->pts = pts;
+	node->dts = dts;
+	list_add_tail(&node->list, head);
+	ret = 0;
+	return ret;
+}
+
+//返回值 0=成功 其他=失败
+//描述:从队列（一个链表）读出数据
+//注意:线程不安全，调用前后需加锁解锁
+static int dequeue(struct list_head *head, uint8_t **data, unsigned long *size, long *pts, long *dts)
+{
+	int ret = 0;
+	struct list_head *plist = NULL;
+
+	if (0 != list_empty(head))
+	{
+		ret = -1;
+		return ret;
+	}
+
+	list_for_each(plist, head) 
+	{
+		NODE *node = list_entry(plist, struct node, list);
+		*data = (uint8_t *)malloc(node->size);
+		if (NULL == *data)
+		{
+			ret = -2;
+			return ret;
+		}
+		*size = node->size;
+		*pts = node->pts;
+		*dts = node->dts;
+		memcpy(*data, node->data, node->size);
+		list_del(plist);
+		free(node->data);
+		free(node);
+		break;
+	}
+
+	ret = 0;
+	return ret;
+}
+
 unsigned int __stdcall encode_proc(void *p)
 {
 	int ret = 0;
 	GV *global_var = (GV *)p;
 	ENCODER encoder;
+	int got_frame = 0;
+	DWORD start_time = 0,end_time = 0;
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
@@ -282,9 +378,160 @@ unsigned int __stdcall encode_proc(void *p)
 
 
 	ret = init_encoder(global_var, &encoder, global_var->log_file);
+	if (0 != ret)
+	{
+		ret = -1;
+		return ret;
+	}
+
+	while(0 == global_var->stop)
+	{
+		char *data = NULL;
+		unsigned long data_size = 0;
+		//延时50毫秒
+		start_time = end_time = timeGetTime();
+		while(50 < end_time-start_time)
+			end_time = timeGetTime();
+
+		//video
+		ret = get_video_frame(&data, &data_size);
+		if (ret == 0)
+		{
+			av_init_packet(&encoder.video_packet);
+			encoder.video_packet.data = NULL;
+			encoder.video_packet.size = 0;
+
+			encoder.video_frame->data[0] = (uint8_t *)data;//亮度Y
+			encoder.video_frame->data[1] = (uint8_t *)data + 
+												encoder.width * encoder.height * 5 / 4;//色度U
+			encoder.video_frame->data[2] = (uint8_t *)data + 
+												encoder.width*encoder.height;//色度V
+			encoder.video_frame->pts = encoder.count++;
+			ret = avcodec_encode_video2(encoder.video_codec_ctx, 
+											&encoder.video_packet, encoder.video_frame, &got_frame);
+			if (ret < 0)
+			{
+				ret = -2;
+				return -2;
+			}
+			if (got_frame)
+			{
+				NODE *node = (NODE *)malloc(sizeof(NODE));
+				memset(node, 0, sizeof(NODE));
+				encoder.video_packet.stream_index = encoder.video_stream->index;
+				av_packet_rescale_ts(&encoder.video_packet , 
+										encoder.video_codec_ctx->time_base , 
+										encoder.video_stream->time_base);
+				if (global_var->record)
+				{
+					ret = av_write_frame(encoder.fmt_ctx, &encoder.video_packet);
+					if (ret < 0)
+					{
+						ret = -3;
+						return ret;
+					}
+				}
+
+				EnterCriticalSection(&gv->cs[VIDEO_INDEX]);
+				ret = enqueue(&global_var->head[VIDEO_INDEX] , 
+							encoder.video_packet.data , 
+							encoder.video_packet.size ,
+							encoder.video_packet.pts ,
+							encoder.video_packet.dts);
+				LeaveCriticalSection(&gv->cs[VIDEO_INDEX]);
+				if (ret < 0)
+				{
+					ret = -4;
+					return ret;
+				}
+//				send_rtp_video((rtsp_session *)p, (char *)video_packet.data, video_packet.size, video_packet.pts, video_packet.pts);
+			}// if (got_frame)
+			free(data);
+		}//if (0 == ret = get_video_frame(&data, &data_size))
+
+		//audio
+		ret = get_audio_frame(&data, &data_size);
+		if (ret == 0)
+		{
+			uint8_t *pcm = (uint8_t *)data;
+			int pcm_len = data_size;
+			while (pcm_len > 0)
+			{
+				encoder.audio_frame->nb_samples = MIN(encoder.audio_codec_ctx->frame_size, pcm_len);
+				av_init_packet(&encoder.audio_packet);
+				encoder.audio_packet.data = NULL;
+				encoder.audio_packet.size = 0;
+
+				encoder.audio_frame->pts = encoder.audio_pts;
+				encoder.audio_pts += encoder.audio_frame->nb_samples;
+
+				memcpy(encoder.audio_frame->data[0], pcm, encoder.audio_frame->nb_samples*2*2);
+				pcm += encoder.audio_frame->nb_samples*2*2;
+
+				ret = avcodec_encode_audio2(encoder.audio_codec_ctx, 
+												&encoder.audio_packet,encoder.audio_frame, &got_frame);
+				if (ret < 0)
+				{
+					ret = -5;
+					return ret;
+				}
+				if (got_frame)
+				{
+					encoder.audio_packet.stream_index = encoder.audio_stream->index;
+					av_packet_rescale_ts(&encoder.audio_packet, 
+											encoder.audio_codec_ctx->time_base,
+											encoder.audio_stream->time_base);
+					if (global_var->record)
+					{
+						ret = av_write_frame(encoder.fmt_ctx, &encoder.audio_packet);
+						if (ret < 0)
+						{
+							ret = -6;
+							return ret;
+						}
+					}
+
+					EnterCriticalSection(&gv->cs[AUDIO_INDEX]);
+					ret = enqueue(&global_var->head[AUDIO_INDEX] , 
+						encoder.audio_packet.data , 
+						encoder.audio_packet.size ,
+						encoder.audio_packet.pts ,
+						encoder.audio_packet.dts);
+					LeaveCriticalSection(&gv->cs[AUDIO_INDEX]);
+					if (ret < 0)
+					{
+						ret = -7;
+						return ret;
+					}
+				}
+				pcm_len -= encoder.audio_frame->nb_samples*2*2;
+			}//while (pcm_len > 0)
+			free(data);
+		}// if (0 == ret = get_audio_frame(&data, &data_size))
+	}
+
+	//刷新
+	
+	if (global_var->record)
+	{
+		av_write_trailer(encoder.fmt_ctx);
+	}
+
+
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
 	print_log((LOG *)global_var->log_file, LOG_DEBUG, log_str);
+
+	if (encoder.video_frame)
+		av_frame_free(&encoder.video_frame);
+	if (encoder.video_codec_ctx)
+		avcodec_close(encoder.video_codec_ctx);
+	if (encoder.audio_frame)
+		av_frame_free(&encoder.audio_frame);
+	if (encoder.audio_codec_ctx)
+		avcodec_close(encoder.audio_codec_ctx);
+	if (encoder.fmt_ctx)
+		avformat_free_context(encoder.fmt_ctx);
 
 	ret = 0;
 	return ret;
@@ -292,9 +539,9 @@ unsigned int __stdcall encode_proc(void *p)
 
 //返回值 0=成功 其他=失败
 //描述:开始编码
-int start_encode(void *log_file, char *config_file, char *record_file, bool record)
+int start_encode(void *log_file, char *config_file, char *record_file, int record)
 {
-	int ret = 0;
+	int ret = 0, i = 0;
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
@@ -320,8 +567,11 @@ int start_encode(void *log_file, char *config_file, char *record_file, bool reco
 	memcpy(gv->record_file, record_file, strlen(record_file));
 	gv->record = record;
 
-	INIT_LIST_HEAD(&gv->head);
-	InitializeCriticalSection(&gv->cs);
+	for (i=0; i<2; i++)
+	{
+		INIT_LIST_HEAD(&gv->head[i]);
+		InitializeCriticalSection(&gv->cs[i]);
+	}
 	
 	gv->handler = (HANDLE)_beginthreadex(NULL, 0, encode_proc, gv, 0, NULL);
 	if (NULL == gv->handler)
@@ -339,20 +589,81 @@ int start_encode(void *log_file, char *config_file, char *record_file, bool reco
 	return ret;
 }
 
-int get_video_packet(void **data, unsigned long *size, long long pts, long long dts)
+int get_video_packet(void **data, unsigned long *size, long *pts, long *dts)
 {
 	int ret = 0;
+	if (NULL == data || NULL == size || NULL == gv || NULL == pts || NULL == dts)
+	{
+		ret = -1;
+		return ret;
+	}
+	EnterCriticalSection(&gv->cs[VIDEO_INDEX]);
+	ret = dequeue(&gv->head[VIDEO_INDEX], (uint8_t **)data, size, pts, dts);
+	LeaveCriticalSection(&gv->cs[VIDEO_INDEX]);
+	if (ret != 0)
+		ret = -2;
 	return ret;
 }
 
-int get_audio_packet(void **data, unsigned long *size, long long pts, long long dts)
+int get_audio_packet(void **data, unsigned long *size, long *pts, long *dts)
 {
 	int ret = 0;
+	if (NULL == data || NULL == size || NULL == gv || NULL == pts || NULL == dts)
+	{
+		ret = -1;
+		return ret;
+	}
+	EnterCriticalSection(&gv->cs[VIDEO_INDEX]);
+	ret = dequeue(&gv->head[VIDEO_INDEX], (uint8_t **)data, size, pts, dts);
+	LeaveCriticalSection(&gv->cs[VIDEO_INDEX]);
+	if (ret != 0)
+		ret = -2;
 	return ret;
 }
 
 int stop_encode()
 {
-	int ret = 0;
+	int ret = 0, i = 0;
+	char log_str[1024] = {0};
+
+	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)gv->log_file, LOG_DEBUG, log_str);
+	if (NULL == gv)
+	{
+		ret = -1;
+		return ret;
+	}
+
+	gv->stop = 1;
+
+	WaitForSingleObject(gv->handler,INFINITE);
+
+	for (i=0; i<2; i++)
+	{
+		struct list_head *plist = NULL;
+
+		EnterCriticalSection(&gv->cs[i]);
+		while (0 == list_empty(&gv->head[i]))
+		{
+			list_for_each(plist, &gv->head[i]) 
+			{
+				NODE *node = list_entry(plist, struct node, list);
+				list_del(plist);
+				free(node->data);
+				free(node);
+				break;
+			}
+		}
+		LeaveCriticalSection(&gv->cs[i]);
+		DeleteCriticalSection(&gv->cs[i]);
+	}
+
+	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)gv->log_file, LOG_DEBUG, log_str);
+
+	if (gv)
+		free(gv);
+	gv = NULL;
+	ret = 0;
 	return ret;
 }
