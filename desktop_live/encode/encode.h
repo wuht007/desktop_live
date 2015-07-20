@@ -14,10 +14,10 @@ extern "C"
 {
 #endif
 
-DLLIMPORT int start_encode(void *log_file, char *config_file, char *record_file, bool record);
-DLLIMPORT int get_video_packet(void **data, unsigned long *size, long long pts, long long dts);
-DLLIMPORT int get_audio_packet(void **data, unsigned long *size, long long pts, long long dts);
-DLLIMPORT int stop_encode();
+DLLIMPORT int init_ercoder(void *log_file, char *config_file, char *record_file, bool record);
+DLLIMPORT int encode_video(void **data, unsigned long *size, long long pts, long long dts);
+DLLIMPORT int encode_audio(void **data, unsigned long *size, long long pts, long long dts);
+DLLIMPORT int free_encoder();
 
 #ifdef __cplusplus
 };

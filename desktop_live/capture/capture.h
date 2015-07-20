@@ -20,6 +20,7 @@ DLLIMPORT int start_capture(void *log_file, char *config_file);
 DLLIMPORT int get_video_frame(void **data, unsigned long *size);
 DLLIMPORT int get_audio_frame(void **data, unsigned long *size);
 DLLIMPORT int stop_capture();
+DLLIMPORT int free_capture();
 
 #ifdef __cplusplus
 };

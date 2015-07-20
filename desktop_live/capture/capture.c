@@ -135,7 +135,7 @@ int init_video_param(GV *global_var, SCREEN *screen, VIDEO *video, void *log_fil
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
 	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
-	video->fps = GetPrivateProfileIntA("video", "fps", 10, global_var->config_file);
+	video->fps = GetPrivateProfileIntA("capture", "fps", 10, global_var->config_file);
 	video->yuv_len = screen->bitmap_width * \
 						screen->bitmap_height*2;
 	video->yuv = (uint8_t *)malloc(video->yuv_len);
@@ -385,13 +385,13 @@ int init_audio_param(GV *global_var, AUDIO *audio, WAVEFORMATEX *waveformat, voi
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
 	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
-	audio->channels = GetPrivateProfileIntA("audio", 
+	audio->channels = GetPrivateProfileIntA("capture", 
 												"channels", 2, global_var->config_file);
-	audio->bits_per_sample = GetPrivateProfileIntA("audio", 
+	audio->bits_per_sample = GetPrivateProfileIntA("capture", 
 														"bits_per_sample", 16, global_var->config_file);
-	audio->samples_per_sec = GetPrivateProfileIntA("audio", 
+	audio->samples_per_sec = GetPrivateProfileIntA("capture", 
 														"samples_per_sec", 48000, global_var->config_file);
-	audio->avg_bytes_per_sec = GetPrivateProfileIntA("audio", 
+	audio->avg_bytes_per_sec = GetPrivateProfileIntA("capture", 
 														"avg_bytes_per_sec", 48000, global_var->config_file);
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
@@ -688,8 +688,32 @@ int stop_capture()
 
 	for (i=0; i<2; i++)
 	{
-		struct list_head *plist = NULL;
 		WaitForSingleObject(gv->handler[i],INFINITE);
+	}
+
+	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)gv->log_file, LOG_DEBUG, log_str);
+
+	ret = 0;
+	return ret;
+}
+
+int free_capture()
+{
+	int ret = 0, i = 0;
+	char log_str[1024] = {0};
+
+	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)gv->log_file, LOG_DEBUG, log_str);
+	if (NULL == gv)
+	{
+		ret = -1;
+		return ret;
+	}
+
+	for (i=0; i<2; i++)
+	{
+		struct list_head *plist = NULL;
 
 		EnterCriticalSection(&gv->cs[i]);
 		while (0 == list_empty(&gv->head[i]))
@@ -707,12 +731,13 @@ int stop_capture()
 		DeleteCriticalSection(&gv->cs[i]);
 	}
 
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)gv->log_file, LOG_DEBUG, log_str);
-
 	if (gv)
 		free(gv);
 	gv = NULL;
+
+	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)gv->log_file, LOG_DEBUG, log_str);
+
 	ret = 0;
 	return ret;
 }

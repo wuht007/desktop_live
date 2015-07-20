@@ -1,12 +1,10 @@
 #include "capture.h"
 #include "log.h"
-#include "encode.h"
 #include <stdio.h>
 #include <stdlib.h>
 
 #pragma comment(lib, "capture.lib")
 #pragma comment(lib, "log.lib")
-#pragma comment(lib, "encode.lib")
 
 int main(int argc, char **argv)
 {
@@ -31,13 +29,6 @@ int main(int argc, char **argv)
 		return ret;
 	}
 
-	ret = start_encode(log, config_file);
-	if (0 != ret)
-	{
-		printf("start encode failed\n");
-		return -1;
-	}
-
 	ret = start_capture(log, config_file);
 	if (0 != ret)
 	{
@@ -60,8 +51,6 @@ int main(int argc, char **argv)
 			free(data);
 		}
 	}
-
-	stop_encode();
 
 	stop_capture();
 
