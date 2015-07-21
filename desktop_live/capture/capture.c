@@ -276,6 +276,7 @@ static int enqueue(struct list_head *head, uint8_t *data, unsigned long size)
 		ret = -2;
 		return ret;
 	}
+	memcpy(node->data, data, size);
 	node->size = size;
 	list_add_tail(&node->list, head);
 	ret = 0;
