@@ -71,7 +71,8 @@ typedef struct global_variable
 	char config_file[MAX_PATH];
 	RTL_CRITICAL_SECTION cs[2];
 	struct list_head head[2];
-
+	int width;
+	int height;
 }GV;
 
 static GV *gv = NULL;
@@ -335,6 +336,10 @@ unsigned int __stdcall video_capture_proc(void *p)
 	print_log((LOG *)log_file, LOG_DEBUG, log_str);
 
 	get_screen_info(&screen, log_file);
+
+	global_var->width = screen.bitmap_width;
+	global_var->height = screen.bitmap_height;
+
 	ret = init_video_param(global_var, &screen ,&video, log_file);
 	if (ret != 0)
 	{
@@ -636,7 +641,7 @@ int start_capture(void *log_file, char *config_file)
 
 //返回值 0=成功 其他=失败
 //描述:获取一帧采集视频数据
-int get_video_frame(void **data, unsigned long *size)
+int get_video_frame(void **data, unsigned long *size, int *width, int *hetgit)
 {
 	int ret = 0;
 	if (NULL == data || NULL == size || NULL == gv)
@@ -649,6 +654,8 @@ int get_video_frame(void **data, unsigned long *size)
 	LeaveCriticalSection(&gv->cs[VIDEO_INDEX]);
 	if (ret != 0)
 		ret = -2;
+	*width = gv->width;
+	*hetgit = gv->height;
 	return ret;
 }
 

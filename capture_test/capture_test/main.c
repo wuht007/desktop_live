@@ -18,6 +18,8 @@ int main(int argc, char **argv)
 	int times = 0;
 	int log_level;
 	int out_way;
+	int width = 0;
+	int height = 0;
 	log_level = GetPrivateProfileIntA("log", 
 		"level", 0, config_file);
 	out_way = GetPrivateProfileIntA("log", 
@@ -38,7 +40,7 @@ int main(int argc, char **argv)
 
 	while(times < 100)
 	{
-		if (0 == get_video_frame(&data, &size))
+		if (0 == get_video_frame(&data, &size, &width, &height))
 		{
 			times++;
 			printf("video data size = %d\n", size);
