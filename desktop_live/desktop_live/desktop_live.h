@@ -34,19 +34,31 @@ typedef struct
 	char *cseq;
 	char *time_buf;
 	void *media;
-	SOCKADDR_IN dest;
+	SOCKADDR_IN client;
 
-	struct list_head head;
+	struct list_head list;
 }RTSP;
 
 typedef struct 
 {
-	char *config_file;
-	char *log_file;
+	char config_file[MAX_PATH];
+
 	LOG *log;
+	char log_file[MAX_PATH];
+	int log_level;
+	int log_out_way;
+
+	char record_file[MAX_PATH];
+	int record;
+
 	SOCKADDR_IN source;
+#define IP_LEN 20
+	char server_ip[IP_LEN];
+	unsigned short listen_port;
 	SOCKET listen_socket;
-	RTSP *rtsp_list;
+	FD_SET rfds;
+	struct timeval tv;
+	struct list_head rtsp_head;
 }SERVER;
 
 #ifdef __cplusplus

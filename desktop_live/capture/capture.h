@@ -16,7 +16,7 @@ extern "C"
 {
 #endif
 
-DLLIMPORT int start_capture(void *log_file, char *config_file);
+DLLIMPORT int start_capture(void *log, char *config_file);
 DLLIMPORT int get_video_frame(void **data, unsigned long *size, int *width, int *hetgit);
 DLLIMPORT int get_audio_frame(void **data, unsigned long *size);
 DLLIMPORT int stop_capture();

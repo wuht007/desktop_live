@@ -67,7 +67,7 @@ typedef struct global_variable
 #define AUDIO_INDEX 1
 	HANDLE handler[2];
 	int stop;
-	void *log_file;
+	void *log;
 	char config_file[MAX_PATH];
 	RTL_CRITICAL_SECTION cs[2];
 	struct list_head head[2];
@@ -78,7 +78,7 @@ typedef struct global_variable
 static GV *gv = NULL;
 
 //描述:获取屏幕的宽高，屏幕位图的宽高、深度、通道数、一帧位图的长度
-void get_screen_info(SCREEN *screen, void *log_file)
+void get_screen_info(SCREEN *screen, void *log)
 {
 	HDC src = NULL;
 	HDC mem = NULL;
@@ -94,7 +94,7 @@ void get_screen_info(SCREEN *screen, void *log_file)
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 
 	screen->width = right - left;
 	screen->height = bottom - top;
@@ -122,19 +122,19 @@ void get_screen_info(SCREEN *screen, void *log_file)
 	DeleteObject(bitmap);
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 }
 
 //返回值:0=成功 其他=失败
 //描述:初始化配置文件中的视频参数
-int init_video_param(GV *global_var, SCREEN *screen, VIDEO *video, void *log_file)
+int init_video_param(GV *global_var, SCREEN *screen, VIDEO *video, void *log)
 {
 	int ret = -1;
 
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 
 	video->fps = GetPrivateProfileIntA("capture", "fps", 10, global_var->config_file);
 	video->yuv_len = screen->bitmap_width * \
@@ -156,14 +156,14 @@ int init_video_param(GV *global_var, SCREEN *screen, VIDEO *video, void *log_fil
 	}
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 
 	ret = 0;
 	return ret;
 }
 
 //描述:把桌面设备的内存位图复制到video->rgba
-void copy_screen_bitmap(SCREEN *screen, VIDEO *video, void *log_file)
+void copy_screen_bitmap(SCREEN *screen, VIDEO *video, void *log)
 {
 	HDC src = NULL;
 	HDC mem = NULL;
@@ -329,18 +329,18 @@ unsigned int __stdcall video_capture_proc(void *p)
 	unsigned int step_time;
 	DWORD start,end;
 	GV *global_var = (GV *)p;
-	void *log_file = global_var->log_file;
+	void *log = global_var->log;
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 
-	get_screen_info(&screen, log_file);
+	get_screen_info(&screen, log);
 
 	global_var->width = screen.bitmap_width;
 	global_var->height = screen.bitmap_height;
 
-	ret = init_video_param(global_var, &screen ,&video, log_file);
+	ret = init_video_param(global_var, &screen ,&video, log);
 	if (ret != 0)
 	{
 		ret = -1;
@@ -352,7 +352,7 @@ unsigned int __stdcall video_capture_proc(void *p)
 	while (!global_var->stop)
 	{
 		start = timeGetTime();
-		copy_screen_bitmap(&screen ,&video, log_file);
+		copy_screen_bitmap(&screen ,&video, log);
 		RGBA2YUV((LPBYTE)video.rgba, 
 					screen.bitmap_width, 
 					screen.bitmap_height, 
@@ -377,19 +377,19 @@ unsigned int __stdcall video_capture_proc(void *p)
 	free(video.rgba);
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 
 	return 0;
 }
 
 //描述:从配置文件中读出音频采集的基本参数，没读到采用默认值
-int init_audio_param(GV *global_var, AUDIO *audio, WAVEFORMATEX *waveformat, void *log_file)
+int init_audio_param(GV *global_var, AUDIO *audio, WAVEFORMATEX *waveformat, void *log)
 {
 	int ret = 0;
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 
 	audio->channels = GetPrivateProfileIntA("capture", 
 												"channels", 2, global_var->config_file);
@@ -401,7 +401,7 @@ int init_audio_param(GV *global_var, AUDIO *audio, WAVEFORMATEX *waveformat, voi
 														"avg_bytes_per_sec", 48000, global_var->config_file);
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 
 	ret = 0;
 	return 0;
@@ -410,7 +410,7 @@ int init_audio_param(GV *global_var, AUDIO *audio, WAVEFORMATEX *waveformat, voi
 //返回值 0=成功 其他=失败
 //描述:初始化并且开启wave采集
 int start_wave(AUDIO *audio, WAVEFORMATEX *waveformat, 
-				WAVEHDR **wavehdr, HWAVEIN *wavein, int HDRCOUNT, void *log_file)
+				WAVEHDR **wavehdr, HWAVEIN *wavein, int HDRCOUNT, void *log)
 {
 	int ret = 0;
 	int i = 0;
@@ -418,7 +418,7 @@ int start_wave(AUDIO *audio, WAVEFORMATEX *waveformat,
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 	audio->pcm_len = 0;;
 	audio->pcm = (uint8_t *)malloc(size * HDRCOUNT);
 	if (NULL == audio->pcm)
@@ -478,7 +478,7 @@ int start_wave(AUDIO *audio, WAVEFORMATEX *waveformat,
 	}
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 
 	ret = 0;
 	return ret;
@@ -491,7 +491,7 @@ unsigned int __stdcall audio_capture_proc(void *p)
 	int ret = 0, i = 0;
 	GV *global_var = (GV *)p;
 	AUDIO audio = {0};
-	void *log_file = global_var->log_file;
+	void *log = global_var->log;
 	
 	const int HDRCOUNT = 10;
 	int hdr = 0;
@@ -501,16 +501,16 @@ unsigned int __stdcall audio_capture_proc(void *p)
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 
-	ret = init_audio_param(global_var, &audio, &waveformat, log_file);
+	ret = init_audio_param(global_var, &audio, &waveformat, log);
 	if (0 != ret)
 	{
 		ret = -2;
 		return ret;
 	}
 
-	ret = start_wave(&audio, &waveformat, &wavehdr[0], &wavein, HDRCOUNT, log_file);
+	ret = start_wave(&audio, &waveformat, &wavehdr[0], &wavein, HDRCOUNT, log);
 	if (0 != ret)
 	{
 		ret = -3;
@@ -578,7 +578,7 @@ unsigned int __stdcall audio_capture_proc(void *p)
 	}
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 
 	ret = 0;
 	return 0;
@@ -586,14 +586,14 @@ unsigned int __stdcall audio_capture_proc(void *p)
 
 //返回值 0=成功 其他=失败
 //描述:初始化全局变量gv，开启两个线程采集视频和音频
-int start_capture(void *log_file, char *config_file)
+int start_capture(void *log, char *config_file)
 {
 	int ret = 0;
 	int i = 0;
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 
 	if (gv != NULL)
 	{
@@ -609,7 +609,7 @@ int start_capture(void *log_file, char *config_file)
 	}
 	memset(gv, 0, sizeof(GV));
 	gv->stop = 0;
-	gv->log_file = log_file;
+	gv->log = log;
 	memcpy(gv->config_file, config_file, strlen(config_file));
 
 	for (i=0; i<2; i++)
@@ -633,7 +633,7 @@ int start_capture(void *log_file, char *config_file)
 	}
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 
 	ret = 0;
 	return ret;
@@ -685,7 +685,7 @@ int stop_capture()
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)gv->log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)gv->log, LOG_DEBUG, log_str);
 	if (NULL == gv)
 	{
 		ret = -1;
@@ -700,7 +700,7 @@ int stop_capture()
 	}
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)gv->log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)gv->log, LOG_DEBUG, log_str);
 
 	ret = 0;
 	return ret;
@@ -712,7 +712,7 @@ int free_capture()
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)gv->log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)gv->log, LOG_DEBUG, log_str);
 	if (NULL == gv)
 	{
 		ret = -1;
@@ -744,7 +744,7 @@ int free_capture()
 	gv = NULL;
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)gv->log_file, LOG_DEBUG, log_str);
+	print_log((LOG *)gv->log, LOG_DEBUG, log_str);
 
 	ret = 0;
 	return ret;

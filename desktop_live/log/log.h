@@ -47,7 +47,7 @@ typedef struct logpriv
 	RTL_CRITICAL_SECTION cs;
 }LOG_PRIV;
 
-typedef struct log
+typedef struct
 {
 	struct logpriv log_priv;
 }LOG;
