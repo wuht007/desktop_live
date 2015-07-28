@@ -78,9 +78,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="desktop_live.h" />
+    <ClInclude Include="rtsp.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="desktop_live.c" />
+    <ClCompile Include="rtsp.c" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

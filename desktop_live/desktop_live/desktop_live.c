@@ -1,7 +1,8 @@
+#include <WinSock2.h>
+#include <WS2tcpip.h>
+#include <string.h>
 #include "desktop_live.h"
 #include "capture.h"
-#include <string.h>
-#include <WS2tcpip.h>
 
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "log.lib")
@@ -144,13 +145,13 @@ int send_media(SERVER *server)
 
 	if (0 == get_video_frame(&data, &size, &width, &height))
 	{
-		printf("video data size = %d\n", size);
+//		printf("video data size = %d\n", size);
 		free(data);
 	}
 
 	if (0 == get_audio_frame(&data, &size))
 	{
-		printf("audio data size = %d\n", size);
+//		printf("audio data size = %d\n", size);
 		free(data);
 	}
 }
@@ -172,9 +173,9 @@ int add_client(SERVER *server)
 	list_add(&rtsp->list, &server->rtsp_head);
 }
 
-int handle_recv()
+int handle_recv(RTSP *rtsp, char *recv_buf, int size)
 {
-
+	return parse_recv_buffer(rtsp, recv_buf, size);
 }
 
 int do_read(SERVER *server)
@@ -194,10 +195,11 @@ int do_read(SERVER *server)
 			if (FD_ISSET(rtsp->rtsp_socket, &server->rfds))
 			{
 				char recv_buf[2048] = {0};
+				char *send_buf;
 				ret = recv(rtsp->rtsp_socket, recv_buf, 2048, 0);
 				if (ret > 0)
 				{
-					handle_recv();
+					handle_recv(rtsp, recv_buf, ret);
 				}
 				else
 				{
@@ -253,6 +255,7 @@ int main(int argc, char **argv)
 
 	while (1)
 	{
+		struct list_head *plist;
 		ret = select(0, &server.rfds, NULL, NULL, &server.tv);
 		if (ret < 0)
 		{
@@ -269,6 +272,11 @@ int main(int argc, char **argv)
 		}
 
 		FD_SET(server.listen_socket, &server.rfds);
+		list_for_each(plist, &server.rtsp_head)
+		{
+			RTSP *rtsp = list_entry(plist, RTSP, list);
+			FD_SET(rtsp->rtsp_socket, &server.rfds);
+		}
 	}
 
 	return ret;

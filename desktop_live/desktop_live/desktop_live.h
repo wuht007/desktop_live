@@ -1,9 +1,8 @@
 #ifndef __DESKTOP_LIVE_H__
 #define __DESKTOP_LIVE_H__
 
-#include "list.h"
-#include <WinSock2.h>
 #include "log.h"
+#include "rtsp.h"
 
 enum stream_type
 {
@@ -25,19 +24,6 @@ typedef struct
 	SOCKADDR_IN dest_addr;
 	enum transport_mode mode;
 }RTP;
-
-typedef struct 
-{
-	SOCKET rtsp_socket;
-	char *cmd;
-	char *url;
-	char *cseq;
-	char *time_buf;
-	void *media;
-	SOCKADDR_IN client;
-
-	struct list_head list;
-}RTSP;
 
 typedef struct 
 {

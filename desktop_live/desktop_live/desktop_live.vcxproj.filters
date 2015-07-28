@@ -18,9 +18,15 @@
     <ClInclude Include="desktop_live.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="rtsp.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="desktop_live.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="rtsp.c">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
