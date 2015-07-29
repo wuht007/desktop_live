@@ -3,6 +3,8 @@
 #include <string.h>
 #include "desktop_live.h"
 #include "capture.h"
+#include "log.h"
+#include "rtsp.h"
 
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "log.lib")
@@ -138,6 +140,7 @@ int init_basic_param(SERVER *server)
 
 int send_media(SERVER *server)
 {
+	int ret = 0;
 	char *data = NULL;
 	unsigned long size = 0;
 	int width = 0;
@@ -154,9 +157,12 @@ int send_media(SERVER *server)
 //		printf("audio data size = %d\n", size);
 		free(data);
 	}
+
+	ret = 0;
+	return ret;
 }
 
-int add_client(SERVER *server)
+int add_client(SERVER *server, struct list_head *rtsp_head)
 {
 	int ret = 0;
 	int size = sizeof(SOCKADDR_IN);
@@ -170,41 +176,52 @@ int add_client(SERVER *server)
 	}
 
 	rtsp->rtsp_socket = accept(server->listen_socket, (SOCKADDR *)&rtsp->client, &size);
-	list_add(&rtsp->list, &server->rtsp_head);
+	list_add(&rtsp->list, rtsp_head);
+
+	ret = 0;
+	return ret;
 }
 
 int handle_recv(RTSP *rtsp, char *recv_buf, int size)
 {
-	return parse_recv_buffer(rtsp, recv_buf, size);
+	int ret = 0;
+	ret = parse_recv_buffer(rtsp, recv_buf, size);
+	if (0 != ret)
+	{
+		ret = -1;
+		return ret;
+	}
+
+	ret = 0;
+	return ret;
 }
 
-int do_read(SERVER *server)
+int do_read(SERVER *server, struct list_head *rtsp_head)
 {
 	int ret = 0;
 	struct list_head *plist;
 
 	if (FD_ISSET(server->listen_socket,&server->rfds))
 	{
-		ret = add_client(server);
+		ret = add_client(server, rtsp_head);
 	}
-	else
+
+	list_for_each(plist, rtsp_head)
 	{
-		list_for_each(plist, &server->rtsp_head)
+		RTSP *rtsp = list_entry(plist, RTSP, list);
+		if (FD_ISSET(rtsp->rtsp_socket, &server->rfds))
 		{
-			RTSP *rtsp = list_entry(plist, RTSP, list);
-			if (FD_ISSET(rtsp->rtsp_socket, &server->rfds))
+			char recv_buf[2048] = {0};
+			char send_buf[2048] = {0};
+			ret = recv(rtsp->rtsp_socket, recv_buf, 2048, 0);
+			if (ret > 0)
 			{
-				char recv_buf[2048] = {0};
-				char *send_buf;
-				ret = recv(rtsp->rtsp_socket, recv_buf, 2048, 0);
-				if (ret > 0)
-				{
-					handle_recv(rtsp, recv_buf, ret);
-				}
-				else
-				{
-					//连接失效，释放所有该rtsp会话的资源
-				}
+				rtsp->send_buf = send_buf;
+				handle_recv(rtsp, recv_buf, ret);
+			}
+			else
+			{
+				//连接失效，释放所有该rtsp会话的资源
 			}
 		}
 	}
@@ -217,6 +234,8 @@ int main(int argc, char **argv)
 {
 	int ret = 0;
 	SERVER server = {0};
+	LOG *log = NULL;
+	struct list_head rtsp_head = {0};
 
 	ret = get_config_file(&server);
 	if (ret != 0)
@@ -227,14 +246,14 @@ int main(int argc, char **argv)
 
 	init_basic_param(&server);
 
-	server.log = init_log(server.log_file, server.log_level, server.log_out_way);
-	if (server.log == NULL)
+	log = init_log(server.log_file, server.log_level, server.log_out_way);
+	if (log == NULL)
 	{
 		ret = -2;
 		return ret;
 	}
 
-	INIT_LIST_HEAD(&server.rtsp_head);
+	INIT_LIST_HEAD(&rtsp_head);
 
 	ret = set_up_listen_socket(&server);
 	if (ret != 0)
@@ -246,7 +265,7 @@ int main(int argc, char **argv)
 	FD_ZERO(&server.rfds);
 	FD_SET(server.listen_socket, &server.rfds);
 
-	ret = start_capture(server.log, server.config_file);
+	ret = start_capture(log, server.config_file);
 	if (ret != 0)
 	{
 		ret = -4;
@@ -268,11 +287,11 @@ int main(int argc, char **argv)
 		}
 		else
 		{
-			do_read(&server);
+			do_read(&server, &rtsp_head);
 		}
 
 		FD_SET(server.listen_socket, &server.rfds);
-		list_for_each(plist, &server.rtsp_head)
+		list_for_each(plist, &rtsp_head)
 		{
 			RTSP *rtsp = list_entry(plist, RTSP, list);
 			FD_SET(rtsp->rtsp_socket, &server.rfds);

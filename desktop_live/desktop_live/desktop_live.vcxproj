@@ -78,6 +78,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="desktop_live.h" />
+    <ClInclude Include="rtp.h" />
     <ClInclude Include="rtsp.h" />
   </ItemGroup>
   <ItemGroup>

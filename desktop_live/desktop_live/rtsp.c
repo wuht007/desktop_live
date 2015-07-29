@@ -1,4 +1,8 @@
+#include <string.h>
+#include <stdio.h>
+#include <time.h>
 #include "rtsp.h"
+
 
 
 #ifndef MIN
@@ -9,75 +13,121 @@
 #  define MAX(a,b)  ((a) < (b) ? (b) : (a))
 #endif
 
-int parse_recv_buffer(RTSP *rtsp, char *recv_buf, int size)
+char *get_time(char *time_buf)
+{
+	time_t t = time(NULL);
+	strftime(time_buf,127,"%a,%b %d %y %H:%M:%S",gmtime(&t));
+	return time_buf;
+}
+
+int handle_options(RTSP *rtsp, char *recv_buf, int size)
 {
 	int ret = -1;
-	char *line = NULL;
-	char *buffer = recv_buf;
-	line = strtok(buffer, "\r\n");
-	ret = sscanf(buffer,"%[^ ] %[^ ] ",rtsp->cmd, rtsp->url);
-	if (ret != 2)
+	rtsp->send_len = sprintf(rtsp->send_buf, "%s 200 OK\r\n"
+							"%s\r\n"
+							"%s\r\n"
+							//"Public: OPTIONS, DESCRIBE, SETUP, TEARDOWN, LAPY, PAUSE, GET_PARAMETER, SET_PARAMETER",
+							"Public: OPTIONS, DESCRIBE, SETUP, PAPY\r\n\r\n"
+							, rtsp->version, rtsp->cseq, rtsp->time_buf);
+
+	ret = 0;
+	return ret;
+}
+
+int handle_describe(RTSP *rtsp, char *recv_buf, int size)
+{
+	int ret = -1;
+	char describe[20] = {0};
+	char *application = strstr(recv_buf, "application");
+	if (NULL == application)
 	{
 		ret = -1;
 		return ret;
 	}
 
-	while (line = strtok(NULL,"\r\n"))
+	ret = sscanf(application, "%[^\r\n]\r\n",)
+
+	rtsp->send_len = sprintf(rtsp->send_buf, "%s 200 OK\r\n"
+		"%s\r\n"
+		"%s\r\n"
+		"Content-Base: %s"
+		"Content-Type: %s"
+		, rtsp->version, rtsp->cseq, rtsp->time_buf, rtsp->url);
+
+	ret = 0;
+	return ret;
+}
+
+int handle_setup(RTSP *rtsp, char *recv_buf, int size)
+{
+	int ret = -1;
+	return ret;
+}
+
+int handle_play(RTSP *rtsp, char *recv_buf, int size)
+{
+	int ret = -1;
+	return ret;
+}
+
+int handle_void()
+{
+	int ret = -1;
+	return ret;
+}
+
+int parse_recv_buffer(RTSP *rtsp, char *recv_buf, int size)
+{
+	int ret = -1;
+	char *buffer = recv_buf;
+	char *cseq = NULL;
+
+	memset(rtsp->cmd, 0, sizeof(rtsp->cmd));
+	memset(rtsp->url, 0, sizeof(rtsp->url));
+	memset(rtsp->version, 0, sizeof(rtsp->version));
+	memset(rtsp->cseq, 0, sizeof(rtsp->cseq));
+	memset(rtsp->time_buf, 0, sizeof(rtsp->time_buf));
+
+	ret = sscanf(buffer,"%[^ ] %[^ ] %[^ \r\n]\r\n",rtsp->cmd, rtsp->url, rtsp->version);
+	if (ret != 3)
 	{
-		if (strncmp(line, "CSeq", 4) == 0)
-		{
-			int len = strlen(line);
-			len = MIN(len,10);
-			memset(rtsp->cseq, 0, 10);
-			strncpy(rtsp->cseq, line, len);
-		}
-		else if (strncmp(line, "User-Agent", 10) == 0)
-		{
-
-		}
-		//Accept: application/sdp
-		else if (strncmp(line, "Accept: application/sdp", 23) == 0)
-		{
-			rtsp->mode = 1;
-		}
-		else if (strncmp(line, "Transport", 9) == 0)
-		{
-			//URL: rtsp://192.168.109.151/EP01.mkv/track1
-			//应该在这里进行解析line Transport: RTP/AVP/UDP;unicast;client_port=32066-32067
-			//为了简化程序，我并没有解析
-			//先判断是音频流还是视频流，设定track1=video track2=audio
-/*			if (get_sub_string_pos_in_string(rtsp->url, "track1") != -1)
-			{
-				//0是video
-				rtp_session *rtp_sess = &rtsp_sess->rtp_connection[0];
-				rtp_sess->transport_mode = TRANSPORT_RTP_AVP_UDP_UNICAST;
-				rtp_sess->stream_type = STREAM_TYPE_VIDEO;
-				get_rtp_client_port(line, &rtp_sess->dest_port);
-
-				init_rtp_socket(rtsp_sess, 0);
-				//初始化目的地址
-				memcpy((void *)&rtp_sess->dest_addr, (void *)&rtsp_sess->dest, sizeof(SOCKADDR_IN));
-				rtp_sess->dest_addr.sin_port = htons(rtp_sess->dest_port);
-
-			}
-			else if (get_sub_string_pos_in_string(rtsp->url, "track2") == 0)
-			{
-
-				//1是audio
-				rtp_session *rtp_sess = &rtsp_sess->rtp_connection[1];
-				rtp_sess->transport_mode = TRANSPORT_RTP_AVP_UDP_UNICAST;
-				rtp_sess->stream_type = STREAM_TYPE_AUDIO;
-				get_rtp_client_port(line, &rtp_sess->dest_port);
-
-				init_rtp_socket(rtsp_sess, 1);
-				//初始化目的地址
-				memcpy((void *)&rtp_sess->dest_addr, (void *)&rtsp_sess->dest, sizeof(SOCKADDR_IN));
-				rtp_sess->dest_addr.sin_port = htons(rtp_sess->dest_port);
-
-			}
-*/
-		}
+		ret = -1;
+		return ret;
 	}
 
+	cseq = strstr(buffer, "CSeq");
+	if (NULL == cseq)
+	{
+		ret = -2;
+		return -2;
+	}
+
+	ret = sscanf(cseq, "%[^\r\n]\r\n", rtsp->cseq);
+	if (ret != 1)
+	{
+		ret = -3;
+		return ret;
+	}
+
+	get_time(rtsp->time_buf);
+
+	if(0 == strncmp(buffer, "OPTIONS", strlen("OPTIONS")))
+		handle_options(rtsp, buffer, size);
+	else if(0 == strncmp(buffer, "DESCRIBE", strlen("DESCRIBE")))
+		handle_describe(rtsp, buffer, size);
+	else if(0 == strncmp(buffer, "SETUP", strlen("SETUP")))
+		handle_setup(rtsp, buffer, size);
+	else if(0 == strncmp(buffer, "PLAY", strlen("PLAY")))
+		handle_play(rtsp, buffer, size);
+	else
+		handle_void();
+
+	send_rtsp(rtsp);
+
 	return 0;
+}
+
+int send_rtsp(RTSP *rtsp)
+{
+	return send(rtsp->rtsp_socket, rtsp->send_buf, rtsp->send_len, 0);
 }

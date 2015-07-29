@@ -15,9 +15,12 @@ typedef struct
 	SOCKET rtsp_socket;
 	char cmd[20];
 	char url[260];
+	char version[20];
 	char cseq[10];
 	enum describe_mode mode;
 	char time_buf[128];
+	char *send_buf;
+	int send_len;
 	void *media;
 	SOCKADDR_IN client;
 
