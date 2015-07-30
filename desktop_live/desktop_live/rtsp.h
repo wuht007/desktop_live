@@ -22,9 +22,14 @@ typedef struct
 	char *send_buf;
 	int send_len;
 	void *media;
-	SOCKADDR_IN client;
+	char *server_ip;
+	SOCKADDR_IN dest_addr;
 
+	//本身的链表
 	struct list_head list;
+
+	//rtp的链表头
+	struct list_head rtp_head;
 }RTSP;
 
 int parse_recv_buffer(RTSP *rtsp, char *recv_buf, int size);

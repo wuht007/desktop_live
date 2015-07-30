@@ -5,10 +5,13 @@
 #include "capture.h"
 #include "log.h"
 #include "rtsp.h"
+#include "encode.h"
+#include "rtp.h"
 
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "log.lib")
 #pragma comment(lib, "capture.lib")
+#pragma comment(lib, "encode.lib")
 
 //返回值 0=成功 其他值=失败
 //填充SERVER->config_file
@@ -138,17 +141,198 @@ int init_basic_param(SERVER *server)
 	return ret;
 }
 
-int send_media(SERVER *server)
+char *find_nalu(char **data, int size, int *len)
+{
+	char *nalu = NULL;
+	char *nalu_end = NULL;
+	int finded = 0;
+	nalu = *data;
+	while(size-- >= 0)
+	{
+		if ((*nalu == 0x00 && *(nalu+1) == 0x00 && *(nalu+2) == 0x01)
+			|| (*nalu == 0x00 && *(nalu+1) == 0x00 && *(nalu+2) == 0x00 && *(nalu+3) == 0x01))
+		{
+			*len = 3;
+			nalu_end = nalu + 3;
+			while(*len <= size)
+			{
+				if ((*nalu_end == 0x00 && *(nalu_end+1) == 0x00 && *(nalu_end+2) == 0x01)
+					|| (*nalu_end == 0x00 && *(nalu_end+1) == 0x00 && *(nalu_end+2) == 0x00 && *(nalu_end+3) == 0x01))
+				{
+					break;
+				}
+
+				nalu_end++;
+				(*len)++;
+			}
+			*data = nalu_end;
+			finded = 1;
+			break;
+		}
+
+		nalu++;
+	}
+
+	if (finded)
+	{
+		return nalu;
+	}
+
+	return NULL;
+}
+
+int send_rtp(struct list_head *rtsp_head, char *send_buf, int size, int type)
+{
+	int ret = 0;
+	struct list_head *p_rtsp_list = NULL;
+	struct list_head *p_rtp_list = NULL;
+	list_for_each(p_rtsp_list, rtsp_head)
+	{
+		RTSP *rtsp = list_entry(p_rtsp_list, RTSP, list);
+		list_for_each(p_rtp_list, &rtsp->rtp_head) 
+		{
+			RTP *rtp = list_entry(p_rtp_list, RTP, list);
+			if (rtp->type == type)//stream_type::video)
+			{
+				ret = sendto(rtp->rtp_socket, send_buf, size, 0, 
+						(SOCKADDR *)&rtp->dest_addr, sizeof(SOCKADDR));
+				printf("send len = %d\n", ret);
+			}
+		}
+	}
+	
+	ret = 0;
+	return ret;
+}
+
+int send_media(SERVER *server, struct list_head *rtsp_head)
 {
 	int ret = 0;
 	char *data = NULL;
 	unsigned long size = 0;
 	int width = 0;
 	int height = 0;
+	char *dest = NULL;
+	unsigned long dest_size = 0;
+	long long pts = 0;
+	long long dts = 0;
 
 	if (0 == get_video_frame(&data, &size, &width, &height))
 	{
-//		printf("video data size = %d\n", size);
+		if (0 == encode_video(data, width, height, &dest, &dest_size, &pts, &dts))
+		{
+			char *encode_data = dest;
+			int nalu_len = 0;
+			char *nalu = NULL;
+			while((nalu = find_nalu(&encode_data, dest_size, &nalu_len)) != NULL)
+			{
+				static unsigned short sq = 34763;
+				char *nal = nalu;
+				int nal_len = nalu_len;
+				//RTP_HEADER rtp_hdr = {0};
+				char rtp_hdr[12] = {0};
+				char imp = 0;
+				char type = 0;
+				char send_buf[1500] = {0};
+
+				dest_size -= nalu_len;
+
+				while(*(nal++) != 0x01)
+					nal_len--;
+				nal_len--;
+
+				imp &= 0x0;
+				imp |= (*nal);
+				imp &= 0xe0;
+
+				type &= 0x0;
+				type |= (*nal);
+				type &= 0x1f;
+
+/*				rtp_hdr.version = 2;
+				rtp_hdr.padding = 0;
+				rtp_hdr.extension = 0;
+				rtp_hdr.csrc_len = 0;
+//				rtp_hdr.marker = 0;
+				rtp_hdr.payloadtype = 96;
+//				rtp_hdr.seq_no = htons(sq++);
+				rtp_hdr.timestamp = htonl(pts/1024*9000);
+				rtp_hdr.ssrc = htonl(2906685981);
+*/
+				rtp_hdr[0] = 0x80;
+				rtp_hdr[1] = 0xe0;
+				*(unsigned short *)&rtp_hdr[4] = htonl(pts/1024*9000);
+				*(unsigned short *)&rtp_hdr[8] = htonl(2906685981);
+
+				if (nal_len < 1400)
+				{
+//					rtp_hdr.seq_no = htons(sq++);
+//					rtp_hdr.marker = 1;
+					*(unsigned short *)&rtp_hdr[2] = htons(sq++);
+					memcpy(send_buf, &rtp_hdr, 12);
+					memcpy(send_buf+12, nal, nal_len);
+
+					send_rtp(rtsp_head, send_buf, 12+nal_len, 0);//stream_type::video);
+					nal_len -= nal_len;
+					nal += nal_len;
+					continue;
+				}
+
+				while(nal_len > 0)
+				{
+					int first = 0;
+//					rtp_hdr.seq_no = htons(sq++);
+					*(unsigned short *)&rtp_hdr[2] = htons(sq++);
+					if (nal_len < 1400)
+					{
+//						rtp_hdr.marker = 1;
+						rtp_hdr[1] = 0xe0;
+						memcpy(send_buf, &rtp_hdr, 12);
+						send_buf[12] |= 0x1c;
+						send_buf[12] |= imp;
+
+						send_buf[13] |= 0x40;
+						send_buf[13] |= type;
+						memcpy(send_buf+14, nal, nal_len);
+
+						send_rtp(rtsp_head, send_buf, 14+nal_len, 0);//stream_type::video);
+						nal_len -= nal_len;
+						nal += nal_len;
+					}
+					else
+					{
+//						rtp_hdr.marker = 0;
+						rtp_hdr[1] = 0x60;
+						memcpy(send_buf, &rtp_hdr, 12);
+						//0x1c=28 FU-A
+						send_buf[12] = 0x1c;
+						send_buf[12] |= imp;
+
+						if (first == 0)
+						{
+							first = 1;
+							send_buf[13] |= 0x80;
+							send_buf[13] |= type;
+							//去掉前面的开始码 如 65 67 68等等
+							nal += 1;
+							nal_len -= 1;
+						}
+						else
+						{
+							send_buf[13] &= 0x0;
+							send_buf[13] |= type;
+						}
+
+						memcpy(send_buf+14, nal, 1400);
+
+						send_rtp(rtsp_head, send_buf, 14+1400, 0);//stream_type::video);
+						nal_len -= 1400;
+						nal += 1400;
+					}
+				}
+			}
+			free(dest);
+		}
 		free(data);
 	}
 
@@ -175,7 +359,11 @@ int add_client(SERVER *server, struct list_head *rtsp_head)
 		return ret;
 	}
 
-	rtsp->rtsp_socket = accept(server->listen_socket, (SOCKADDR *)&rtsp->client, &size);
+	memset(rtsp, 0, sizeof(RTSP));
+	INIT_LIST_HEAD(&rtsp->rtp_head);
+	rtsp->server_ip = server->server_ip;
+
+	rtsp->rtsp_socket = accept(server->listen_socket, (SOCKADDR *)&rtsp->dest_addr, &size);
 	list_add(&rtsp->list, rtsp_head);
 
 	ret = 0;
@@ -236,7 +424,7 @@ int main(int argc, char **argv)
 	SERVER server = {0};
 	LOG *log = NULL;
 	struct list_head rtsp_head = {0};
-
+	long long i = 1000;
 	ret = get_config_file(&server);
 	if (ret != 0)
 	{
@@ -272,7 +460,14 @@ int main(int argc, char **argv)
 		return ret;
 	}
 
-	while (1)
+	ret = init_ercoder(log, server.config_file, server.record_file, server.record);
+	if (ret != 0)
+	{
+		ret = -5;
+		return ret;
+	}
+
+	while (i--)
 	{
 		struct list_head *plist;
 		ret = select(0, &server.rfds, NULL, NULL, &server.tv);
@@ -283,7 +478,7 @@ int main(int argc, char **argv)
 		}
 		else if (ret == 0)
 		{
-			ret = send_media(&server);
+			ret = send_media(&server, &rtsp_head);
 		}
 		else
 		{
@@ -297,6 +492,14 @@ int main(int argc, char **argv)
 			FD_SET(rtsp->rtsp_socket, &server.rfds);
 		}
 	}
+
+	stop_capture();
+
+	fflush_encoder();
+
+	free_encoder();
+
+	free_log();
 
 	return ret;
 }

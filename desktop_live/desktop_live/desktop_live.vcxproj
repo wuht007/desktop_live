@@ -39,7 +39,7 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>E:\desktop_live\desktop_live\capture;E:\desktop_live\desktop_live\log;$(IncludePath)</IncludePath>
+    <IncludePath>E:\desktop_live\desktop_live\capture;E:\desktop_live\desktop_live\log;E:\desktop_live\desktop_live\encode;$(IncludePath)</IncludePath>
     <OutDir>$(SolutionDir)$(Configuration)\..\lib</OutDir>
     <LibraryPath>E:\desktop_live\desktop_live\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
@@ -83,6 +83,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="desktop_live.c" />
+    <ClCompile Include="rtp.c" />
     <ClCompile Include="rtsp.c" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

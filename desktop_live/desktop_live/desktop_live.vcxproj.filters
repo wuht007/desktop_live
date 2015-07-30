@@ -32,5 +32,8 @@
     <ClCompile Include="rtsp.c">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="rtp.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
