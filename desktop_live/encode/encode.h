@@ -22,7 +22,7 @@ typedef struct
 	long long dts;
 }AUDIO_PACKET;
 
-DLLIMPORT int init_ercoder(void *log_file, char *config_file, char *record_file, int record);
+DLLIMPORT int init_ercoder(void *log, char *config_file, char *record_file, int record);
 DLLIMPORT int encode_video(void *source, int source_width, int source_height,
 								void **dest, unsigned long *dest_size, long long *pts, long long *dts);
 DLLIMPORT int encode_audio(void *source, unsigned long source_size, AUDIO_PACKET *ap, int *len);

@@ -68,7 +68,12 @@ LOG *init_log(char *file_name, unsigned int log_level, unsigned int out_way)
 
 void free_log()
 {
+	if (NULL == g_log)
+	{
+		return ;
+	}
 	fclose(g_log->log_priv.file);
 	DeleteCriticalSection(&g_log->log_priv.cs);
+	free(g_log);
 }
 

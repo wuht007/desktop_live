@@ -1,6 +1,8 @@
 #include <WinSock2.h>
 #include <WS2tcpip.h>
 #include <string.h>
+#define _CRTDBG_MAP_ALLOC
+#include <crtdbg.h>
 #include "desktop_live.h"
 #include "capture.h"
 #include "log.h"
@@ -195,8 +197,7 @@ int send_rtp(struct list_head *rtsp_head, char *send_buf, int size, int type)
 			if (rtp->type == type)//stream_type::video)
 			{
 				ret = sendto(rtp->rtp_socket, send_buf, size, 0, 
-						(SOCKADDR *)&rtp->dest_addr, sizeof(SOCKADDR));
-				printf("send len = %d\n", ret);
+					(SOCKADDR *)&rtp->dest_addr, sizeof(SOCKADDR));
 			}
 		}
 	}
@@ -229,14 +230,16 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 				static unsigned short sq = 34763;
 				char *nal = nalu;
 				int nal_len = nalu_len;
-				//RTP_HEADER rtp_hdr = {0};
 				char rtp_hdr[12] = {0};
 				char imp = 0;
 				char type = 0;
 				char send_buf[1500] = {0};
+				int first = 0;
 
 				dest_size -= nalu_len;
 
+				// 00 00 00 01 65 
+				// 去掉 00 00 00 01部分
 				while(*(nal++) != 0x01)
 					nal_len--;
 				nal_len--;
@@ -249,16 +252,6 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 				type |= (*nal);
 				type &= 0x1f;
 
-/*				rtp_hdr.version = 2;
-				rtp_hdr.padding = 0;
-				rtp_hdr.extension = 0;
-				rtp_hdr.csrc_len = 0;
-//				rtp_hdr.marker = 0;
-				rtp_hdr.payloadtype = 96;
-//				rtp_hdr.seq_no = htons(sq++);
-				rtp_hdr.timestamp = htonl(pts/1024*9000);
-				rtp_hdr.ssrc = htonl(2906685981);
-*/
 				rtp_hdr[0] = 0x80;
 				rtp_hdr[1] = 0xe0;
 				*(unsigned short *)&rtp_hdr[4] = htonl(pts/1024*9000);
@@ -266,8 +259,6 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 
 				if (nal_len < 1400)
 				{
-//					rtp_hdr.seq_no = htons(sq++);
-//					rtp_hdr.marker = 1;
 					*(unsigned short *)&rtp_hdr[2] = htons(sq++);
 					memcpy(send_buf, &rtp_hdr, 12);
 					memcpy(send_buf+12, nal, nal_len);
@@ -280,17 +271,17 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 
 				while(nal_len > 0)
 				{
-					int first = 0;
-//					rtp_hdr.seq_no = htons(sq++);
+					
+					memset(send_buf, 0, sizeof(send_buf));
 					*(unsigned short *)&rtp_hdr[2] = htons(sq++);
 					if (nal_len < 1400)
 					{
-//						rtp_hdr.marker = 1;
 						rtp_hdr[1] = 0xe0;
 						memcpy(send_buf, &rtp_hdr, 12);
 						send_buf[12] |= 0x1c;
 						send_buf[12] |= imp;
 
+						//尾包
 						send_buf[13] |= 0x40;
 						send_buf[13] |= type;
 						memcpy(send_buf+14, nal, nal_len);
@@ -311,6 +302,7 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 						if (first == 0)
 						{
 							first = 1;
+							//首包
 							send_buf[13] |= 0x80;
 							send_buf[13] |= type;
 							//去掉前面的开始码 如 65 67 68等等
@@ -319,6 +311,7 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 						}
 						else
 						{
+							//中间包
 							send_buf[13] &= 0x0;
 							send_buf[13] |= type;
 						}
@@ -338,7 +331,6 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 
 	if (0 == get_audio_frame(&data, &size))
 	{
-//		printf("audio data size = %d\n", size);
 		free(data);
 	}
 
@@ -418,13 +410,37 @@ int do_read(SERVER *server, struct list_head *rtsp_head)
 	return ret;
 }
 
+int free_rtsp_connection(struct list_head *rtsp_head)
+{
+	int ret = 0;
+	struct list_head *p_rtsp_list = NULL;
+	struct list_head *p_rtp_list = NULL;
+	list_for_each(p_rtsp_list, rtsp_head)
+	{
+		RTSP *rtsp = list_entry(p_rtsp_list, RTSP, list);
+		list_for_each(p_rtp_list, &rtsp->rtp_head) 
+		{
+			RTP *rtp = list_entry(p_rtp_list, RTP, list);
+			free(rtp);
+			list_del(p_rtp_list);
+		}
+		closesocket(rtsp->rtsp_socket);
+		free(rtsp);
+		list_del(p_rtsp_list);
+	}
+
+	ret = 0;
+	return ret;
+}
+
 int main(int argc, char **argv)
 {
 	int ret = 0;
 	SERVER server = {0};
 	LOG *log = NULL;
 	struct list_head rtsp_head = {0};
-	long long i = 1000;
+	long long i = 100;
+
 	ret = get_config_file(&server);
 	if (ret != 0)
 	{
@@ -495,11 +511,16 @@ int main(int argc, char **argv)
 
 	stop_capture();
 
+	free_capture();
+
 	fflush_encoder();
 
 	free_encoder();
 
+	free_rtsp_connection(&rtsp_head);
+
 	free_log();
 
+	_CrtDumpMemoryLeaks();
 	return ret;
 }

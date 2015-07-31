@@ -127,7 +127,7 @@ void get_screen_info(SCREEN *screen, void *log)
 
 //返回值:0=成功 其他=失败
 //描述:初始化配置文件中的视频参数
-int init_video_param(GV *global_var, SCREEN *screen, VIDEO *video, void *log)
+int init_capture_video_param(GV *global_var, SCREEN *screen, VIDEO *video, void *log)
 {
 	int ret = -1;
 
@@ -140,18 +140,22 @@ int init_video_param(GV *global_var, SCREEN *screen, VIDEO *video, void *log)
 	video->yuv_len = screen->bitmap_width * \
 						screen->bitmap_height*2;
 	video->yuv = (uint8_t *)malloc(video->yuv_len);
+	sprintf(log_str, " %s:%d video->yuv = malloc %d\r\n",__FUNCTION__, __LINE__, video->yuv_len);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 	if (!video->yuv)
 	{
-		printf("malloc failed\n");
+		ret = -1;
 		return ret;
 	}
 
 	video->rgba_len =  screen->bitmap_width * screen->bitmap_height * \
 						screen->bitmap_channel * (screen->bitmap_depth/8);
 	video->rgba = (uint8_t *)malloc(video->rgba_len);
+	sprintf(log_str, " %s:%d video->rgba = malloc %d\r\n",__FUNCTION__, __LINE__, video->rgba_len);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 	if (!video->rgba)
 	{
-		printf("malloc failed\n");
+		ret = -2;
 		return ret;
 	}
 
@@ -340,7 +344,7 @@ unsigned int __stdcall video_capture_proc(void *p)
 	global_var->width = screen.bitmap_width;
 	global_var->height = screen.bitmap_height;
 
-	ret = init_video_param(global_var, &screen ,&video, log);
+	ret = init_capture_video_param(global_var, &screen ,&video, log);
 	if (ret != 0)
 	{
 		ret = -1;
@@ -374,7 +378,11 @@ unsigned int __stdcall video_capture_proc(void *p)
 	}
 
 	free(video.yuv);
+	sprintf(log_str, " %s:%d free video.yuv\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 	free(video.rgba);
+	sprintf(log_str, " %s:%d free video.rgba\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
 	print_log((LOG *)log, LOG_DEBUG, log_str);
@@ -383,7 +391,7 @@ unsigned int __stdcall video_capture_proc(void *p)
 }
 
 //描述:从配置文件中读出音频采集的基本参数，没读到采用默认值
-int init_audio_param(GV *global_var, AUDIO *audio, WAVEFORMATEX *waveformat, void *log)
+int init_capture_audio_param(GV *global_var, AUDIO *audio, WAVEFORMATEX *waveformat, void *log)
 {
 	int ret = 0;
 	char log_str[1024] = {0};
@@ -421,6 +429,8 @@ int start_wave(AUDIO *audio, WAVEFORMATEX *waveformat,
 	print_log((LOG *)log, LOG_DEBUG, log_str);
 	audio->pcm_len = 0;;
 	audio->pcm = (uint8_t *)malloc(size * HDRCOUNT);
+	sprintf(log_str, " %s:%d audio->pcm = malloc %d\r\n",__FUNCTION__, __LINE__, size * HDRCOUNT);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 	if (NULL == audio->pcm)
 	{
 		ret = -1;
@@ -445,6 +455,8 @@ int start_wave(AUDIO *audio, WAVEFORMATEX *waveformat,
 	for (i = 0; i < HDRCOUNT; i++)
 	{
 		wavehdr[i] = (WAVEHDR*)malloc(size + sizeof(WAVEHDR));
+		sprintf(log_str, " %s:%d wavehdr[%d] = malloc %d\r\n",__FUNCTION__, __LINE__, i, size + sizeof(WAVEHDR));
+		print_log((LOG *)log, LOG_DEBUG, log_str);
 		if (NULL == wavehdr[i])
 		{
 			ret = -3;
@@ -503,7 +515,7 @@ unsigned int __stdcall audio_capture_proc(void *p)
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
 	print_log((LOG *)log, LOG_DEBUG, log_str);
 
-	ret = init_audio_param(global_var, &audio, &waveformat, log);
+	ret = init_capture_audio_param(global_var, &audio, &waveformat, log);
 	if (0 != ret)
 	{
 		ret = -2;
@@ -568,7 +580,13 @@ unsigned int __stdcall audio_capture_proc(void *p)
 			return ret;
 		}
 		free(wavehdr[i]);
+		sprintf(log_str, " %s:%d free wavehdr[%d]\r\n",__FUNCTION__, __LINE__, i);
+		print_log((LOG *)log, LOG_DEBUG, log_str);
 	}
+
+	free(audio.pcm);
+	sprintf(log_str, " %s:%d free audio.pcm\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 
 	ret = waveInClose(wavein);
 	if (ret != MMSYSERR_NOERROR)
@@ -602,6 +620,8 @@ int start_capture(void *log, char *config_file)
 	}
 
 	gv = (GV *)malloc(sizeof(GV));
+	sprintf(log_str, " %s:%d gv = malloc %d\r\n",__FUNCTION__, __LINE__, sizeof(GV));
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 	if (NULL == gv)
 	{
 		ret = -2;
@@ -738,14 +758,15 @@ int free_capture()
 		LeaveCriticalSection(&gv->cs[i]);
 		DeleteCriticalSection(&gv->cs[i]);
 	}
-
-	if (gv)
-		free(gv);
-	gv = NULL;
+	sprintf(log_str, " %s:%d free gv\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)gv->log, LOG_DEBUG, log_str);
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
 	print_log((LOG *)gv->log, LOG_DEBUG, log_str);
 
+	if (gv)
+		free(gv);
+	gv = NULL;
 	ret = 0;
 	return ret;
 }

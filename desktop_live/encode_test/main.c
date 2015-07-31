@@ -3,6 +3,8 @@
 #include "encode.h"
 #include <stdio.h>
 #include <stdlib.h>
+#define _CRTDBG_MAP_ALLOC
+#include <crtdbg.h>
 
 #pragma comment(lib, "capture.lib")
 #pragma comment(lib, "log.lib")
@@ -91,6 +93,7 @@ int main()
 					free(ap[i].data);
 				}
 			}
+			
 //			printf("audio data size = %d\n", size);
 			free(data);
 		}
@@ -99,11 +102,14 @@ int main()
 
 	stop_capture();
 
+	free_capture();
+
 	fflush_encoder();
 
 	free_encoder();
 
 	free_log();
 
+	_CrtDumpMemoryLeaks();
 	return 0;
 }

@@ -23,9 +23,9 @@ extern "C"
 
 typedef struct 
 {
-	void *log_file;
-	char *config_file;
-	char *record_file;
+	void *log;
+	char config_file[MAX_PATH];
+	char record_file[MAX_PATH];
 	int record;
 
 #define VIDEO_STREAM_INDEX 0
@@ -57,62 +57,70 @@ typedef struct
 
 static ENCODER *s_encoder;
 
-int init_param(ENCODER *encoder, void *log_file, char *config_file, char *record_file, int record)
+int init_encoder_param(ENCODER *encoder, void *log, char *config_file, char *record_file, int record)
 {
 	int size = 0, ret = 0;
+	char log_str[1024] = {0};
 
-	encoder->log_file = log_file;
+	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
+
+	encoder->log = log;
 
 	size = strlen(config_file)+1;
-	encoder->config_file = (char *)malloc(size);
-	if (!encoder->config_file)
-	{
-		ret = -1;
-		return ret;
-	}
 	memset(encoder->config_file, 0, size);
 	memcpy(encoder->config_file, config_file, size-1);
 	encoder->config_file[size] = '\0';
 
 	size = strlen(record_file)+1;
-	encoder->record_file = (char *)malloc(size);
-	if (!encoder->record_file)
-	{
-		free(encoder->config_file);
-		ret = -2;
-		return ret;
-	}
 	memset(encoder->record_file, 0, size);
 	memcpy(encoder->record_file, record_file, size-1);
 	encoder->record_file[size] = '\0';
 
 	encoder->record = record;
 
+	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 	ret = 0;
 	return ret;
 }
 
-int init_video_param(ENCODER *encoder)
+int init_encoder_video_param(ENCODER *encoder)
 {
 	char *config_file = encoder->config_file;
+	char log_str[1024] = {0};
+
+	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
+
+	
 	encoder->fps = GetPrivateProfileIntA("encode", "fps", 10, config_file);
 	encoder->width = GetPrivateProfileIntA("encode", "width", 1366, config_file);
 	encoder->height = GetPrivateProfileIntA("encode", "height", 768, config_file);
 	encoder->bit_rate = GetPrivateProfileIntA("encode", "bit_rate", 400000, config_file);
 	encoder->video_pts = 0;
 
+	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 	return 0;
 }
 
-int init_audio_param(ENCODER *encoder)
+int init_encoder_audio_param(ENCODER *encoder)
 {
 	char *config_file = encoder->config_file;
+	char log_str[1024] = {0};
+
+	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
+
 	encoder->channels = GetPrivateProfileIntA("encode", "channels", 2, config_file);
 	encoder->bits_per_sample = GetPrivateProfileIntA("encode", "bits_per_sample", 16, config_file);
 	encoder->sample_rate = GetPrivateProfileIntA("encode", "sample_rate", 48000, config_file);
 	encoder->avg_bytes_per_sec = GetPrivateProfileIntA("encode", "avg_bytes_per_sec", 48000, config_file);
 	encoder->audio_pts = 0;
 
+	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 	return 0;
 }
 
@@ -121,6 +129,10 @@ int init_format_context(ENCODER *encoder)
 	int ret = 0;
 	AVFormatContext *fmt_ctx = NULL;
 	char *record_file = encoder->record_file;
+	char log_str[1024] = {0};
+
+	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 
 	av_register_all();
 
@@ -133,6 +145,9 @@ int init_format_context(ENCODER *encoder)
 	}
 
 	encoder->fmt_ctx = fmt_ctx;
+
+	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 	ret = 0;
 	return ret;
 }
@@ -147,6 +162,11 @@ int init_video_stream(ENCODER *encoder)
 	int width = encoder->width;
 	int height = encoder->height;
 	int bit_rate = encoder->bit_rate;
+	char log_str[1024] = {0};
+
+	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
+
 
 	codec = avcodec_find_encoder(AV_CODEC_ID_H264);
 	if (!codec)
@@ -181,7 +201,7 @@ int init_video_stream(ENCODER *encoder)
 	codec_ctx->time_base.den = fps;
 	
 	//组的大小，IDR+n b + n p 等于一组
-	codec_ctx->gop_size = 10;
+	codec_ctx->gop_size = 0;
 	codec_ctx->max_b_frames = 1;
 	codec_ctx->me_range = 16;
 	codec_ctx->bit_rate = bit_rate;//码率
@@ -221,6 +241,8 @@ int init_video_stream(ENCODER *encoder)
 	encoder->video_codec_ctx = codec_ctx;
 	encoder->video_codec = codec;
 
+	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 	ret = 0;
 	return ret;
 }
@@ -234,6 +256,10 @@ int init_audio_stream(ENCODER *encoder)
 	int sample_rate = encoder->sample_rate;
 	int channels = encoder->channels;
 	int avg_bytes_per_sec = encoder->avg_bytes_per_sec;
+	char log_str[1024] = {0};
+
+	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 
 	//查找编码器
 	codec = avcodec_find_encoder(AV_CODEC_ID_AAC);
@@ -279,6 +305,8 @@ int init_audio_stream(ENCODER *encoder)
 	encoder->audio_codec_ctx = codec_ctx;
 	encoder->audio_codec = codec;
 
+	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 	ret = 0;
 	return ret;
 }
@@ -286,6 +314,10 @@ int init_audio_stream(ENCODER *encoder)
 int init_record_file(ENCODER *encoder)
 {
 	int ret = 0;
+	char log_str[1024] = {0};
+
+	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 	if (encoder->record)
 	{
 		//打开文件
@@ -308,6 +340,8 @@ int init_record_file(ENCODER *encoder)
 		}
 	}
 
+	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 	ret = 0;
 	return ret;
 }
@@ -316,6 +350,11 @@ int init_video_frame(ENCODER *encoder)
 {
 	int ret = 0;
 	AVFrame *frame = NULL;
+	char log_str[1024] = {0};
+
+	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
+
 	frame = av_frame_alloc();
 	if (!frame)
 	{
@@ -339,6 +378,8 @@ int init_video_frame(ENCODER *encoder)
 
 	encoder->video_frame = frame;
 
+	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 	ret = 0;
 	return ret;
 }
@@ -348,7 +389,10 @@ int init_audio_frame(ENCODER *encoder)
 	int ret = 0;
 	AVFrame *frame = NULL;
 	AVCodecContext *codec_ctx = encoder->audio_codec_ctx;
+	char log_str[1024] = {0};
 
+	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 	frame = av_frame_alloc();
 	if (!frame)
 	{
@@ -369,37 +413,45 @@ int init_audio_frame(ENCODER *encoder)
 
 	encoder->audio_frame = frame;
 
+	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 	ret = 0;
 	return ret;
 }
 
-int init_ercoder(void *log_file, char *config_file, char *record_file, int record)
+int init_ercoder(void *log, char *config_file, char *record_file, int record)
 {
 	int ret;
 	ENCODER *encoder = NULL;
+	char log_str[1024] = {0};
 
-	if (s_encoder || !log_file || !config_file || !record_file)
+	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)log, LOG_DEBUG, log_str);
+
+	if (s_encoder || !log || !config_file || !record_file)
 	{
 		ret = -1;
 		return ret;
 	}
 
 	encoder = (ENCODER *)malloc(sizeof(ENCODER));
+	sprintf(log_str, " %s:%d encoder = malloc %d\r\n",__FUNCTION__, __LINE__, sizeof(ENCODER));
+	print_log((LOG *)log, LOG_DEBUG, log_str);
 	if (!encoder)
 	{
 		ret = -2;
 		goto FAILED;
 	}
 
-	ret = init_param(encoder, log_file, config_file, record_file, record);
+	ret = init_encoder_param(encoder, log, config_file, record_file, record);
 	if (ret != 0)
 	{
 		ret = -3;
 		goto FAILED;
 	}
 
-	init_video_param(encoder);
-	init_audio_param(encoder);
+	init_encoder_video_param(encoder);
+	init_encoder_audio_param(encoder);
 
 	ret = init_format_context(encoder);
 	if (ret != 0)
@@ -441,6 +493,8 @@ int init_ercoder(void *log_file, char *config_file, char *record_file, int recor
 		return ret;
 	}
 
+	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 	s_encoder = encoder;
 	ret = 0;
 	return ret;
@@ -694,7 +748,10 @@ int fflush_encoder()
 	int ret = 0;
 	ENCODER *encoder = s_encoder;
 	int got_frame;
+	char log_str[1024] = {0};
 
+	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 	if (!encoder)
 	{
 		ret = -3;
@@ -761,6 +818,8 @@ int fflush_encoder()
 		}
 	}
 
+	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 	ret = 0;
 	return ret;
 }
@@ -769,7 +828,10 @@ int free_encoder()
 {
 	int ret = 0;
 	ENCODER *encoder = s_encoder;
+	char log_str[1024] = {0};
 
+	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 	if (!encoder)
 	{
 		ret = -1;
@@ -810,6 +872,9 @@ int free_encoder()
 		avformat_free_context(encoder->fmt_ctx);
 		encoder->fmt_ctx = NULL;
 	}
+
+	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
+	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 
 	if (encoder)
 	{

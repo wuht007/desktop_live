@@ -2,6 +2,8 @@
 #include "log.h"
 #include <stdio.h>
 #include <stdlib.h>
+#define _CRTDBG_MAP_ALLOC
+#include <crtdbg.h>
 
 #pragma comment(lib, "capture.lib")
 #pragma comment(lib, "log.lib")
@@ -56,7 +58,9 @@ int main(int argc, char **argv)
 
 	stop_capture();
 
-	free_log();
+	free_capture();
 
+	free_log();
+	_CrtDumpMemoryLeaks();
 	return 0;
 }

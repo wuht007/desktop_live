@@ -167,6 +167,9 @@ int handle_play(RTSP *rtsp, char *recv_buf, int size)
 		"%s\r\n"
 		"Date: %s\r\n\r\n"
 		, rtsp->version, rtsp->cseq, get_time(rtsp->time_buf));
+
+
+
 	ret = 0;
 	return ret;
 }
