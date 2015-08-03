@@ -4,6 +4,8 @@
 #include <WinSock2.h>
 #include "list.h"
 
+
+
 enum stream_type
 {
 	video=0,

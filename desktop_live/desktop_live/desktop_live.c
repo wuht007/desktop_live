@@ -188,16 +188,22 @@ int send_rtp(struct list_head *rtsp_head, char *send_buf, int size, int type)
 	int ret = 0;
 	struct list_head *p_rtsp_list = NULL;
 	struct list_head *p_rtp_list = NULL;
-	list_for_each(p_rtsp_list, rtsp_head)
+	if (0 == list_empty(rtsp_head))
 	{
-		RTSP *rtsp = list_entry(p_rtsp_list, RTSP, list);
-		list_for_each(p_rtp_list, &rtsp->rtp_head) 
+		list_for_each(p_rtsp_list, rtsp_head)
 		{
-			RTP *rtp = list_entry(p_rtp_list, RTP, list);
-			if (rtp->type == type)//stream_type::video)
+			RTSP *rtsp = list_entry(p_rtsp_list, RTSP, list);
+			if (0 == list_empty(&rtsp->rtp_head))
 			{
-				ret = sendto(rtp->rtp_socket, send_buf, size, 0, 
-					(SOCKADDR *)&rtp->dest_addr, sizeof(SOCKADDR));
+				list_for_each(p_rtp_list, &rtsp->rtp_head) 
+				{
+					RTP *rtp = list_entry(p_rtp_list, RTP, list);
+					if (rtp->type == type)//stream_type::video)
+					{
+						ret = sendto(rtp->rtp_socket, send_buf, size, 0, 
+							(SOCKADDR *)&rtp->dest_addr, sizeof(SOCKADDR));
+					}
+				}
 			}
 		}
 	}
@@ -362,10 +368,10 @@ int add_client(SERVER *server, struct list_head *rtsp_head)
 	return ret;
 }
 
-int handle_recv(RTSP *rtsp, char *recv_buf, int size)
+int handle_recv(struct list_head *rtsp_head, RTSP *rtsp, char *recv_buf, int size)
 {
 	int ret = 0;
-	ret = parse_recv_buffer(rtsp, recv_buf, size);
+	ret = parse_recv_buffer(rtsp_head, rtsp, recv_buf, size);
 	if (0 != ret)
 	{
 		ret = -1;
@@ -385,25 +391,31 @@ int do_read(SERVER *server, struct list_head *rtsp_head)
 	{
 		ret = add_client(server, rtsp_head);
 	}
-
-	list_for_each(plist, rtsp_head)
+	
+	while (0 == list_empty(rtsp_head))
 	{
-		RTSP *rtsp = list_entry(plist, RTSP, list);
-		if (FD_ISSET(rtsp->rtsp_socket, &server->rfds))
+		list_for_each(plist, rtsp_head)
 		{
-			char recv_buf[2048] = {0};
-			char send_buf[2048] = {0};
-			ret = recv(rtsp->rtsp_socket, recv_buf, 2048, 0);
-			if (ret > 0)
+			RTSP *rtsp = list_entry(plist, RTSP, list);
+			if (FD_ISSET(rtsp->rtsp_socket, &server->rfds))
 			{
-				rtsp->send_buf = send_buf;
-				handle_recv(rtsp, recv_buf, ret);
-			}
-			else
-			{
-				//连接失效，释放所有该rtsp会话的资源
+				char recv_buf[2048] = {0};
+				char send_buf[2048] = {0};
+				FD_CLR(rtsp->rtsp_socket, &server->rfds);
+				ret = recv(rtsp->rtsp_socket, recv_buf, 2048, 0);
+				if (ret > 0)
+				{
+					rtsp->send_buf = send_buf;
+					handle_recv(rtsp_head, rtsp, recv_buf, ret);
+				}
+				else
+				{
+					//连接失效，释放所有该rtsp会话的资源
+				}
+				break;
 			}
 		}
+		break;
 	}
 
 	ret = 0;
@@ -415,18 +427,26 @@ int free_rtsp_connection(struct list_head *rtsp_head)
 	int ret = 0;
 	struct list_head *p_rtsp_list = NULL;
 	struct list_head *p_rtp_list = NULL;
-	list_for_each(p_rtsp_list, rtsp_head)
+	while (0 == list_empty(rtsp_head))
 	{
-		RTSP *rtsp = list_entry(p_rtsp_list, RTSP, list);
-		list_for_each(p_rtp_list, &rtsp->rtp_head) 
+		list_for_each(p_rtsp_list, rtsp_head)
 		{
-			RTP *rtp = list_entry(p_rtp_list, RTP, list);
-			free(rtp);
-			list_del(p_rtp_list);
+			RTSP *rtsp = list_entry(p_rtsp_list, RTSP, list);
+			while (0 == list_empty(&rtsp->rtp_head))
+			{
+				list_for_each(p_rtp_list, &rtsp->rtp_head) 
+				{
+					RTP *rtp = list_entry(p_rtp_list, RTP, list);
+					list_del(p_rtp_list);
+					free(rtp);
+					break;
+				}
+			}
+			list_del(p_rtsp_list);
+			closesocket(rtsp->rtsp_socket);
+			free(rtsp);
+			break;
 		}
-		closesocket(rtsp->rtsp_socket);
-		free(rtsp);
-		list_del(p_rtsp_list);
 	}
 
 	ret = 0;
@@ -439,7 +459,7 @@ int main(int argc, char **argv)
 	SERVER server = {0};
 	LOG *log = NULL;
 	struct list_head rtsp_head = {0};
-	long long i = 100;
+	long long i = 1000;
 
 	ret = get_config_file(&server);
 	if (ret != 0)
@@ -489,7 +509,7 @@ int main(int argc, char **argv)
 		ret = select(0, &server.rfds, NULL, NULL, &server.tv);
 		if (ret < 0)
 		{
-			ret = -5;
+			ret = WSAGetLastError();
 			break;
 		}
 		else if (ret == 0)
@@ -501,11 +521,15 @@ int main(int argc, char **argv)
 			do_read(&server, &rtsp_head);
 		}
 
+		FD_ZERO(&server.rfds);
 		FD_SET(server.listen_socket, &server.rfds);
-		list_for_each(plist, &rtsp_head)
+		if (0 == list_empty(&rtsp_head))
 		{
-			RTSP *rtsp = list_entry(plist, RTSP, list);
-			FD_SET(rtsp->rtsp_socket, &server.rfds);
+			list_for_each(plist, &rtsp_head)
+			{
+				RTSP *rtsp = list_entry(plist, RTSP, list);
+				FD_SET(rtsp->rtsp_socket, &server.rfds);
+			}
 		}
 	}
 

@@ -59,7 +59,7 @@ int handle_options(RTSP *rtsp, char *recv_buf, int size)
 	rtsp->send_len = sprintf(rtsp->send_buf, "%s 200 OK\r\n"
 							"%s\r\n"
 							"Date: %s\r\n"
-							//"Public: OPTIONS, DESCRIBE, SETUP, TEARDOWN, LAPY, PAUSE, GET_PARAMETER, SET_PARAMETER",
+							//"Public: OPTIONS, DESCRIBE, SETUP, TEARDOWN, PLAY, PAUSE, GET_PARAMETER, SET_PARAMETER",
 							"Public: OPTIONS, DESCRIBE, SETUP, PLAY\r\n\r\n"
 							, rtsp->version, rtsp->cseq, rtsp->time_buf);
 
@@ -168,15 +168,58 @@ int handle_play(RTSP *rtsp, char *recv_buf, int size)
 		"Date: %s\r\n\r\n"
 		, rtsp->version, rtsp->cseq, get_time(rtsp->time_buf));
 
-
-
 	ret = 0;
 	return ret;
 }
 
-int handle_void()
+int delete_rtsp_from_list(struct list_head *rtsp_head, RTSP *rtsp)
+{
+	int ret = 0;
+	struct list_head *p_rtsp_list = NULL;
+	struct list_head *p_rtp_list = NULL;
+	if (0 == list_empty(rtsp_head))
+	{
+		list_for_each(p_rtsp_list, rtsp_head)
+		{
+			RTSP *rtsp_ = list_entry(p_rtsp_list, RTSP, list);
+			if (rtsp_->rtsp_socket == rtsp->rtsp_socket)
+			{
+				while (0 == list_empty(&rtsp_->rtp_head))
+				{
+					list_for_each(p_rtp_list, &rtsp->rtp_head) 
+					{
+						RTP *rtp = list_entry(p_rtp_list, RTP, list);
+						list_del(p_rtp_list);
+						free(rtp);
+						break;
+					}
+				}
+				list_del(p_rtsp_list);
+				closesocket(rtsp->rtsp_socket);
+				free(rtsp);
+				ret = 0;
+				return ret;
+			}
+		}
+	}
+
+	ret = -1;
+	return ret;
+}
+
+int handle_teardown(struct list_head *rtsp_head, RTSP *rtsp, char *recv_buf, int size)
 {
 	int ret = -1;
+	delete_rtsp_from_list(rtsp_head, rtsp);
+	ret = 0;
+	return ret;
+}
+
+int handle_void(struct list_head *rtsp_head, RTSP *rtsp)
+{
+	int ret = -1;
+	delete_rtsp_from_list(rtsp_head, rtsp);
+	ret = 0;
 	return ret;
 }
 
@@ -185,7 +228,7 @@ int send_rtsp(RTSP *rtsp)
 	return send(rtsp->rtsp_socket, rtsp->send_buf, rtsp->send_len, 0);
 }
 
-int parse_recv_buffer(RTSP *rtsp, char *recv_buf, int size)
+int parse_recv_buffer(struct list_head *rtsp_head, RTSP *rtsp, char *recv_buf, int size)
 {
 	int ret = -1;
 	char *buffer = recv_buf;
@@ -228,8 +271,10 @@ int parse_recv_buffer(RTSP *rtsp, char *recv_buf, int size)
 		handle_setup(rtsp, buffer, size);
 	else if(0 == strncmp(buffer, "PLAY", strlen("PLAY")))
 		handle_play(rtsp, buffer, size);
+	else if(0 == strncmp(buffer, "TEARDOWN", strlen("TEARDOWN")))
+		handle_teardown(rtsp_head, rtsp, buffer, size);
 	else
-		handle_void();
+		handle_void(rtsp_head, rtsp);
 
 	ret = send_rtsp(rtsp);
 

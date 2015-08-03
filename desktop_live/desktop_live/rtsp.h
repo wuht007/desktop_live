@@ -4,6 +4,8 @@
 #include "list.h"
 #include <WinSock2.h>
 
+
+
 enum describe_mode
 {
 	none=0,
@@ -32,6 +34,6 @@ typedef struct
 	struct list_head rtp_head;
 }RTSP;
 
-int parse_recv_buffer(RTSP *rtsp, char *recv_buf, int size);
+int parse_recv_buffer(struct list_head *rtsp_head, RTSP *rtsp, char *recv_buf, int size);
 
 #endif
