@@ -219,13 +219,13 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 	unsigned long size = 0;
 	int width = 0;
 	int height = 0;
-	char *dest = NULL;
-	unsigned long dest_size = 0;
-	long long pts = 0;
-	long long dts = 0;
 
 	if (0 == get_video_frame(&data, &size, &width, &height))
 	{
+		char *dest = NULL;
+		unsigned long dest_size = 0;
+		long long pts = 0;
+		long long dts = 0;
 		if (0 == encode_video(data, width, height, &dest, &dest_size, &pts, &dts))
 		{
 			char *encode_data = dest;
@@ -260,8 +260,8 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 
 				rtp_hdr[0] = 0x80;
 				rtp_hdr[1] = 0xe0;
-				*(unsigned short *)&rtp_hdr[4] = htonl(pts/1024*9000);
-				*(unsigned short *)&rtp_hdr[8] = htonl(2906685981);
+				*(unsigned int *)&rtp_hdr[4] = htonl(pts/1024*9000);
+				*(unsigned int *)&rtp_hdr[8] = htonl(2906685981);
 
 				if (nal_len < 1400)
 				{
@@ -276,8 +276,7 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 				}
 
 				while(nal_len > 0)
-				{
-					
+				{				
 					memset(send_buf, 0, sizeof(send_buf));
 					*(unsigned short *)&rtp_hdr[2] = htons(sq++);
 					if (nal_len < 1400)
@@ -332,11 +331,48 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 			}
 			free(dest);
 		}
+
 		free(data);
 	}
 
 	if (0 == get_audio_frame(&data, &size))
 	{
+//AAC封装RTP比较简单
+//将AAC的ADTS头去掉
+//12字节RTP头后紧跟着2个字节的AU_HEADER_LENGTH,
+//后是2字节的AU_HEADER(2 bytes: 13 bits = length of frame, 3 bits = AU-Index(-delta)))，之后就是AAC payload
+//FFMPEG库中的rtpenc_aac.c文件就是将AAC打包RTP格式。。。。
+		AUDIO_PACKET ap[100] = {0};
+		int ap_len = 0, i = 0;
+		static unsigned short sq = 19257;
+		ap_len = 0;
+		if (0 == encode_audio(data, size, ap, &ap_len))
+		{
+			for (i=0; i<ap_len; i++)
+			{
+				char rtp_hdr[12] = {0};
+
+				unsigned short data_len =0;
+				char send_buf[1500] = {0};
+				rtp_hdr[0] = 0x80;
+				rtp_hdr[1] = 0xe1;
+				*(unsigned short *)&rtp_hdr[2] = htons(sq++);
+				*(unsigned int *)&rtp_hdr[4] = htonl(ap[i].pts);
+				*(unsigned int *)&rtp_hdr[8] = htonl(1584216996);
+
+				memcpy(send_buf, rtp_hdr, 12);
+				send_buf[12] = 0x00;
+				send_buf[13] = 0x10;
+				send_buf[14] = ap[i].size >> 5;
+				send_buf[15] = (ap[i].size & 0x1F) << 3;
+				
+				memcpy(send_buf+16, ap[i].data, ap[i].size);
+				send_rtp(rtsp_head, send_buf, 16+ap[i].size, 1);//stream_type::audio);
+
+				free(ap[i].data);
+			}
+		}
+		
 		free(data);
 	}
 
@@ -460,6 +496,7 @@ int main(int argc, char **argv)
 	LOG *log = NULL;
 	struct list_head rtsp_head = {0};
 	long long i = 1000;
+	char log_str[1024] = {0};
 
 	ret = get_config_file(&server);
 	if (ret != 0)

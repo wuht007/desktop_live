@@ -731,8 +731,16 @@ int encode_audio(void *source, unsigned long source_size,
 				ret = -4;
 				return ret;
 			}
-
-			memcpy(ap[len].data, encoder->audio_packet.data, ap[len].size);
+			if (encoder->fmt_ctx->streams[1]->codec->extradata_size == 0)
+			{
+				ap[len].size -= 7;
+				memcpy(ap[len].data, encoder->audio_packet.data + 7, ap[len].size);
+			}
+			else
+			{
+				memcpy(ap[len].data, encoder->audio_packet.data, ap[len].size);
+			}
+			
 
 			(*ap_len)++;
 		}

@@ -44,11 +44,12 @@ int get_sdp_line(RTSP* rtsp, char *sdp, int *len)
 		"a=rtpmap:96 H264/90000\r\n"
 		"a=fmtp:96 packetization-mode=1;profile-level-id=640020;sprop-parameter-sets=Z2QAIKzZQFYGHm4QAAADABAAAAMDKPGDGWA=,aOvjyyLA\r\n"
 		"a=control:track1\r\n"
-		//"m=audio 0 RTP/AVP 97\r\n"
-		//					   "c=IN IP4 0.0.0.0\r\n"
-		//					   "b=AS:96\r\n"
-		//					   "a=rtpmap:97 MPEG4-GENERIC/48000/2\r\n"
-		//"a=control:track2\r\n"
+		"m=audio 0 RTP/AVP 97\r\n"
+		"c=IN IP4 0.0.0.0\r\n"
+		"b=AS:48\r\n"
+		"a=rtpmap:97 MPEG4-GENERIC/48000/2\r\n"
+		"a=fmtp:97 streamtype=5;profile-level-id=1;mode=aac-hdr;sizelength=13;indexlength=3;indexdeltalength=3;config=1190\r\n"//56E500\r\n"
+		"a=control:track2\r\n"
 		);
 	return *len;
 }
