@@ -117,6 +117,7 @@ int set_up_listen_socket(SERVER *server)
 //0=成功 其他=失败
 //从config.ini中读取日志文件、级别、输出方式，流媒体录制文件、录制标志
 //server的ip和端口号,select超时时间
+//是否发送视频、是否发送音频
 int init_basic_param(SERVER *server)
 {
 	int ret = 0;
@@ -128,7 +129,7 @@ int init_basic_param(SERVER *server)
 	server->log_out_way = GetPrivateProfileIntA("log", "out_way", 0, config_file);
 
 
-	GetPrivateProfileString("encode", "record_file", "D:\\desktop_live.mp4", 
+	GetPrivateProfileString("encode", "record_file", "D:\\desktop_live_default.mp4", 
 								server->record_file, MAX_PATH, config_file);
 	server->record = GetPrivateProfileIntA("encode", "record", 1, config_file);
 
@@ -139,6 +140,9 @@ int init_basic_param(SERVER *server)
 	server->tv.tv_sec = GetPrivateProfileIntA("live", "tv_sec", 0, config_file);
 	server->tv.tv_usec = GetPrivateProfileIntA("live", "tv_usec", 50000, config_file);
 
+	server->send_audio = GetPrivateProfileIntA("live", "send_audio", 0, config_file);
+	server->send_video = GetPrivateProfileIntA("live", "send_video", 1, config_file);
+	server->i = GetPrivateProfileIntA("live", "i", 1000, config_file);
 	ret = 0;
 	return ret;
 }
@@ -222,114 +226,117 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 
 	if (0 == get_video_frame(&data, &size, &width, &height))
 	{
-		char *dest = NULL;
-		unsigned long dest_size = 0;
-		long long pts = 0;
-		long long dts = 0;
-		if (0 == encode_video(data, width, height, &dest, &dest_size, &pts, &dts))
+		if (server->send_video == 1)
 		{
-			char *encode_data = dest;
-			int nalu_len = 0;
-			char *nalu = NULL;
-			while((nalu = find_nalu(&encode_data, dest_size, &nalu_len)) != NULL)
+			char *dest = NULL;
+			unsigned long dest_size = 0;
+			long long pts = 0;
+			long long dts = 0;
+			if (0 == encode_video(data, width, height, &dest, &dest_size, &pts, &dts))
 			{
-				static unsigned short sq = 34763;
-				char *nal = nalu;
-				int nal_len = nalu_len;
-				char rtp_hdr[12] = {0};
-				char imp = 0;
-				char type = 0;
-				char send_buf[1500] = {0};
-				int first = 0;
-
-				dest_size -= nalu_len;
-
-				// 00 00 00 01 65 
-				// 去掉 00 00 00 01部分
-				while(*(nal++) != 0x01)
-					nal_len--;
-				nal_len--;
-
-				imp &= 0x0;
-				imp |= (*nal);
-				imp &= 0xe0;
-
-				type &= 0x0;
-				type |= (*nal);
-				type &= 0x1f;
-
-				rtp_hdr[0] = 0x80;
-				rtp_hdr[1] = 0xe0;
-				*(unsigned int *)&rtp_hdr[4] = htonl(pts/1024*9000);
-				*(unsigned int *)&rtp_hdr[8] = htonl(2906685981);
-
-				if (nal_len < 1400)
+				char *encode_data = dest;
+				int nalu_len = 0;
+				char *nalu = NULL;
+				while((nalu = find_nalu(&encode_data, dest_size, &nalu_len)) != NULL)
 				{
-					*(unsigned short *)&rtp_hdr[2] = htons(sq++);
-					memcpy(send_buf, &rtp_hdr, 12);
-					memcpy(send_buf+12, nal, nal_len);
+					static unsigned short sq = 34763;
+					char *nal = nalu;
+					int nal_len = nalu_len;
+					char rtp_hdr[12] = {0};
+					char imp = 0;
+					char type = 0;
+					char send_buf[1500] = {0};
+					int first = 0;
 
-					send_rtp(rtsp_head, send_buf, 12+nal_len, 0);//stream_type::video);
-					nal_len -= nal_len;
-					nal += nal_len;
-					continue;
-				}
+					dest_size -= nalu_len;
 
-				while(nal_len > 0)
-				{				
-					memset(send_buf, 0, sizeof(send_buf));
-					*(unsigned short *)&rtp_hdr[2] = htons(sq++);
+					// 00 00 00 01 65 
+					// 去掉 00 00 00 01部分
+					while(*(nal++) != 0x01)
+						nal_len--;
+					nal_len--;
+
+					imp &= 0x0;
+					imp |= (*nal);
+					imp &= 0xe0;
+
+					type &= 0x0;
+					type |= (*nal);
+					type &= 0x1f;
+
+					rtp_hdr[0] = 0x80;
+					rtp_hdr[1] = 0xe0;
+					*(unsigned int *)&rtp_hdr[4] = htonl(pts/1024*9000);
+					*(unsigned int *)&rtp_hdr[8] = htonl(2906685981);
+
 					if (nal_len < 1400)
 					{
-						rtp_hdr[1] = 0xe0;
+						*(unsigned short *)&rtp_hdr[2] = htons(sq++);
 						memcpy(send_buf, &rtp_hdr, 12);
-						send_buf[12] |= 0x1c;
-						send_buf[12] |= imp;
+						memcpy(send_buf+12, nal, nal_len);
 
-						//尾包
-						send_buf[13] |= 0x40;
-						send_buf[13] |= type;
-						memcpy(send_buf+14, nal, nal_len);
-
-						send_rtp(rtsp_head, send_buf, 14+nal_len, 0);//stream_type::video);
+						send_rtp(rtsp_head, send_buf, 12+nal_len, 0);//stream_type::video);
 						nal_len -= nal_len;
 						nal += nal_len;
+						continue;
 					}
-					else
-					{
-//						rtp_hdr.marker = 0;
-						rtp_hdr[1] = 0x60;
-						memcpy(send_buf, &rtp_hdr, 12);
-						//0x1c=28 FU-A
-						send_buf[12] = 0x1c;
-						send_buf[12] |= imp;
 
-						if (first == 0)
+					while(nal_len > 0)
+					{				
+						memset(send_buf, 0, sizeof(send_buf));
+						*(unsigned short *)&rtp_hdr[2] = htons(sq++);
+						if (nal_len < 1400)
 						{
-							first = 1;
-							//首包
-							send_buf[13] |= 0x80;
+							rtp_hdr[1] = 0xe0;
+							memcpy(send_buf, &rtp_hdr, 12);
+							send_buf[12] |= 0x1c;
+							send_buf[12] |= imp;
+
+							//尾包
+							send_buf[13] |= 0x40;
 							send_buf[13] |= type;
-							//去掉前面的开始码 如 65 67 68等等
-							nal += 1;
-							nal_len -= 1;
+							memcpy(send_buf+14, nal, nal_len);
+
+							send_rtp(rtsp_head, send_buf, 14+nal_len, 0);//stream_type::video);
+							nal_len -= nal_len;
+							nal += nal_len;
 						}
 						else
 						{
-							//中间包
-							send_buf[13] &= 0x0;
-							send_buf[13] |= type;
+							//						rtp_hdr.marker = 0;
+							rtp_hdr[1] = 0x60;
+							memcpy(send_buf, &rtp_hdr, 12);
+							//0x1c=28 FU-A
+							send_buf[12] = 0x1c;
+							send_buf[12] |= imp;
+
+							if (first == 0)
+							{
+								first = 1;
+								//首包
+								send_buf[13] |= 0x80;
+								send_buf[13] |= type;
+								//去掉前面的开始码 如 65 67 68等等
+								nal += 1;
+								nal_len -= 1;
+							}
+							else
+							{
+								//中间包
+								send_buf[13] &= 0x0;
+								send_buf[13] |= type;
+							}
+
+							memcpy(send_buf+14, nal, 1400);
+
+							send_rtp(rtsp_head, send_buf, 14+1400, 0);//stream_type::video);
+							nal_len -= 1400;
+							nal += 1400;
 						}
-
-						memcpy(send_buf+14, nal, 1400);
-
-						send_rtp(rtsp_head, send_buf, 14+1400, 0);//stream_type::video);
-						nal_len -= 1400;
-						nal += 1400;
 					}
 				}
+				free(dest);
 			}
-			free(dest);
 		}
 
 		free(data);
@@ -342,37 +349,40 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 //12字节RTP头后紧跟着2个字节的AU_HEADER_LENGTH,
 //后是2字节的AU_HEADER(2 bytes: 13 bits = length of frame, 3 bits = AU-Index(-delta)))，之后就是AAC payload
 //FFMPEG库中的rtpenc_aac.c文件就是将AAC打包RTP格式。。。。
-		AUDIO_PACKET ap[100] = {0};
-		int ap_len = 0, i = 0;
-		static unsigned short sq = 19257;
-		ap_len = 0;
-		if (0 == encode_audio(data, size, ap, &ap_len))
+
+		if (server->send_audio == 1)
 		{
-			for (i=0; i<ap_len; i++)
+			AUDIO_PACKET ap[100] = {0};
+			int ap_len = 0, i = 0;
+			static unsigned short sq = 19257;
+			ap_len = 0;
+			if (0 == encode_audio(data, size, ap, &ap_len))
 			{
-				char rtp_hdr[12] = {0};
+				for (i=0; i<ap_len; i++)
+				{
+					char rtp_hdr[12] = {0};
 
-				unsigned short data_len =0;
-				char send_buf[1500] = {0};
-				rtp_hdr[0] = 0x80;
-				rtp_hdr[1] = 0xe1;
-				*(unsigned short *)&rtp_hdr[2] = htons(sq++);
-				*(unsigned int *)&rtp_hdr[4] = htonl(ap[i].pts);
-				*(unsigned int *)&rtp_hdr[8] = htonl(1584216996);
+					unsigned short data_len =0;
+					char send_buf[1500] = {0};
+					rtp_hdr[0] = 0x80;
+					rtp_hdr[1] = 0xe1;
+					*(unsigned short *)&rtp_hdr[2] = htons(sq++);
+					*(unsigned int *)&rtp_hdr[4] = htonl(ap[i].pts);
+					*(unsigned int *)&rtp_hdr[8] = htonl(1584216996);
 
-				memcpy(send_buf, rtp_hdr, 12);
-				send_buf[12] = 0x00;
-				send_buf[13] = 0x10;
-				send_buf[14] = ap[i].size >> 5;
-				send_buf[15] = (ap[i].size & 0x1F) << 3;
-				
-				memcpy(send_buf+16, ap[i].data, ap[i].size);
-				send_rtp(rtsp_head, send_buf, 16+ap[i].size, 1);//stream_type::audio);
+					memcpy(send_buf, rtp_hdr, 12);
+					send_buf[12] = 0x00;
+					send_buf[13] = 0x10;
+					send_buf[14] = ap[i].size >> 5;
+					send_buf[15] = (ap[i].size & 0x1F) << 3;
 
-				free(ap[i].data);
+					memcpy(send_buf+16, ap[i].data, ap[i].size);
+					send_rtp(rtsp_head, send_buf, 16+ap[i].size, 1);//stream_type::audio);
+
+					free(ap[i].data);
+				}
 			}
-		}
-		
+		}		
 		free(data);
 	}
 
@@ -495,7 +505,6 @@ int main(int argc, char **argv)
 	SERVER server = {0};
 	LOG *log = NULL;
 	struct list_head rtsp_head = {0};
-	long long i = 1000;
 	char log_str[1024] = {0};
 
 	ret = get_config_file(&server);
@@ -540,7 +549,9 @@ int main(int argc, char **argv)
 		return ret;
 	}
 
-	while (i--)
+	//开俩线程解码
+
+	while (server.i--)
 	{
 		struct list_head *plist;
 		ret = select(0, &server.rfds, NULL, NULL, &server.tv);

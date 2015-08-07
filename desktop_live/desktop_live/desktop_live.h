@@ -11,6 +11,11 @@ typedef struct
 	char record_file[MAX_PATH];
 	int record;
 
+	int send_video;
+	int send_audio;
+	//
+	long long i;
+
 	SOCKADDR_IN source;
 #define IP_LEN 20
 	char server_ip[IP_LEN];

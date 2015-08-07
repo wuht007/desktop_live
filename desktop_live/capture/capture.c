@@ -533,7 +533,7 @@ unsigned int __stdcall audio_capture_proc(void *p)
 
 	while (!global_var->stop)
 	{
-		Sleep(500);
+		Sleep(100);
 		while (wavehdr[hdr]->dwFlags & WHDR_DONE)
 		{
 			memcpy(audio.pcm + audio.pcm_len, wavehdr[hdr]->lpData, wavehdr[hdr]->dwBytesRecorded);
