@@ -206,18 +206,34 @@ int init_video_stream(ENCODER *encoder)
 	codec_ctx->me_range = 16;
 	codec_ctx->bit_rate = bit_rate;//码率
 	codec_ctx->max_qdiff = 3;
-	codec_ctx->qmin = 10;
-	codec_ctx->qmax = 20;//取值可能是0-51 越接近51，视频质量越模糊
+	codec_ctx->qmin = 18;
+	codec_ctx->qmax = 18;//取值可能是0-51 越接近51，视频质量越模糊
 	codec_ctx->qcompress = 0.6;
 
-	//编码速度快
+	//编码速度快 slower superfast
 	ret = av_opt_set(codec_ctx->priv_data, "preset", "superfast", 0);
 	if (ret < 0)
 	{
 		ret = -3;
 		return ret;
 	}
-	
+
+/*	//crf
+	ret = av_opt_set(codec_ctx->priv_data, "crf", "18", 0);
+	if (ret < 0)
+	{
+		ret = -3;
+		return ret;
+	}
+
+	//qp
+	ret = av_opt_set(codec_ctx->priv_data, "qp", "0", 0);
+	if (ret < 0)
+	{
+		ret = -3;
+		return ret;
+	}
+*/	
 	//不延时，不在编码器内缓冲帧
 	ret = av_opt_set(codec_ctx->priv_data, "tune", "zerolatency", 0);
 	if (ret < 0)

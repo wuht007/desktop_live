@@ -98,6 +98,9 @@ void get_screen_info(SCREEN *screen, LOG *log)
 	screen->width = right - left;
 	screen->height = bottom - top;
 
+	sprintf(log_str, ">>%s:%d screen->width=%d screen->height=%d\r\n",__FUNCTION__, __LINE__, screen->width, screen->height);
+	print_log(log, LOG_INFO, log_str);
+
 	src = CreateDC("DISPLAY", NULL, NULL, NULL);
 	mem = CreateCompatibleDC(src);
 	bitmap = CreateCompatibleBitmap(src, screen->width, screen->height);
@@ -112,6 +115,10 @@ void get_screen_info(SCREEN *screen, LOG *log)
 	screen->bitmap_height = bmp.bmHeight;
 	screen->len = screen->bitmap_channel * (screen->bitmap_depth / 8) * \
 					screen->bitmap_width * screen->bitmap_height;
+
+	sprintf(log_str, ">>%s:%d screen->bitmap_width=%d screen->bitmap_height=%d\r\n"
+					,__FUNCTION__, __LINE__, screen->bitmap_width, screen->bitmap_height);
+	print_log(log, LOG_INFO, log_str);
 
 	SelectObject(mem,old_bitmap);
 	DeleteObject(old_bitmap);
