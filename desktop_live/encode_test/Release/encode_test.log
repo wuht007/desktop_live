@@ -1,13 +1,9 @@
-﻿生成启动时间为 2015-08-07 15:35:30。
-     1>项目“E:\desktop_live\desktop_live\encode_test\encode_test.vcxproj”在节点 2 上(build 个目标)。
-     1>InitializeBuildStatus:
-         正在创建“Release\encode_test.unsuccessfulbuild”，因为已指定“AlwaysCreate”。
-       ClCompile:
-         C:\Program Files\Microsoft Visual Studio 10.0\VC\bin\CL.exe /c /Zi /nologo /W3 /WX- /O2 /Oi /Oy- /GL /D WIN32 /D NDEBUG /D _CONSOLE /D _UNICODE /D UNICODE /Gm- /EHsc /MD /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Fo"Release\\" /Fd"Release\vc100.pdb" /Gd /TC /analyze- /errorReport:prompt main.c
-         main.c
-     1>main.c(1): fatal error C1083: 无法打开包括文件:“capture.h”: No such file or directory
-     1>已完成生成项目“E:\desktop_live\desktop_live\encode_test\encode_test.vcxproj”(build 个目标)的操作 - 失败。
+﻿生成启动时间为 2015-08-13 9:06:50。
+     1>项目“E:\desktop_live\desktop_live\encode_test\encode_test.vcxproj”在节点 3 上(clean 个目标)。
+     1>_PrepareForClean:
+         正在删除文件“Release\encode_test.lastbuildstate”。
+     1>已完成生成项目“E:\desktop_live\desktop_live\encode_test\encode_test.vcxproj”(clean 个目标)的操作。
 
-生成失败。
+生成成功。
 
-已用时间 00:00:00.08
+已用时间 00:00:00.00
