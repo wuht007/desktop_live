@@ -136,7 +136,7 @@ int init_format_context(ENCODER *encoder)
 
 	av_register_all();
 
-	//ÉêÇë¸ñÊ½ÉÏÏÂÎÄ
+	//ç”³è¯·æ ¼å¼ä¸Šä¸‹æ–‡
 	avformat_alloc_output_context2(&fmt_ctx, NULL, NULL, record_file);
 	if (!fmt_ctx)
 	{
@@ -175,7 +175,7 @@ int init_video_stream(ENCODER *encoder)
 		return ret;
 	}
 
-	//Èç¹ûÖ¸¶¨±àÂëÆ÷£¬ÄÇÃ´Ò²»á³õÊ¼»¯AVCodecContextµÄË½ÓÐ²¿·Ö£¬·ñÔòÖ»³õÊ¼»¯Í¨ÓÃ²¿·Ö
+	//å¦‚æžœæŒ‡å®šç¼–ç å™¨ï¼Œé‚£ä¹ˆä¹Ÿä¼šåˆå§‹åŒ–AVCodecContextçš„ç§æœ‰éƒ¨åˆ†ï¼Œå¦åˆ™åªåˆå§‹åŒ–é€šç”¨éƒ¨åˆ†
 	stream = avformat_new_stream(encoder->fmt_ctx, codec);
 	if (!stream)
 	{
@@ -191,26 +191,26 @@ int init_video_stream(ENCODER *encoder)
 	codec_ctx->width = width;
 	codec_ctx->height = height;
 
-	//¿´×¢ÊÍÊÇ³¤¿í±È£¬²»ÖªµÀµÄÇé¿öÏÂ¿ÉÒÔÌî0
+	//çœ‹æ³¨é‡Šæ˜¯é•¿å®½æ¯”ï¼Œä¸çŸ¥é“çš„æƒ…å†µä¸‹å¯ä»¥å¡«0
 	codec_ctx->sample_aspect_ratio.num = 0;
 	codec_ctx->sample_aspect_ratio.den = 0;
 
-	//ÊÓÆµ¸ñÊ½ pix_fmts[0] ¾ÍÊÇyuv420p//video_codec_ctx->pix_fmt = video_codec->pix_fmts[0];
+	//è§†é¢‘æ ¼å¼ pix_fmts[0] å°±æ˜¯yuv420p//video_codec_ctx->pix_fmt = video_codec->pix_fmts[0];
 	codec_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
 	codec_ctx->time_base.num = 1;
 	codec_ctx->time_base.den = fps;
 	
-	//×éµÄ´óÐ¡£¬IDR+n b + n p µÈÓÚÒ»×é
+	//ç»„çš„å¤§å°ï¼ŒIDR+n b + n p ç­‰äºŽä¸€ç»„
 	codec_ctx->gop_size = 0;
 	codec_ctx->max_b_frames = 1;
 	codec_ctx->me_range = 16;
-	codec_ctx->bit_rate = bit_rate;//ÂëÂÊ
+	codec_ctx->bit_rate = bit_rate;//ç çŽ‡
 	codec_ctx->max_qdiff = 3;
 	codec_ctx->qmin = 18;
-	codec_ctx->qmax = 18;//È¡Öµ¿ÉÄÜÊÇ0-51 Ô½½Ó½ü51£¬ÊÓÆµÖÊÁ¿Ô½Ä£ºý
+	codec_ctx->qmax = 18;//å–å€¼å¯èƒ½æ˜¯0-51 è¶ŠæŽ¥è¿‘51ï¼Œè§†é¢‘è´¨é‡è¶Šæ¨¡ç³Š
 	codec_ctx->qcompress = 0.6;
 
-	//±àÂëËÙ¶È¿ì slower superfast
+	//ç¼–ç é€Ÿåº¦å¿« slower superfast
 	ret = av_opt_set(codec_ctx->priv_data, "preset", "superfast", 0);
 	if (ret < 0)
 	{
@@ -226,6 +226,9 @@ int init_video_stream(ENCODER *encoder)
 		return ret;
 	}
 
+
+
+	//add by wht in ch
 	//qp
 	ret = av_opt_set(codec_ctx->priv_data, "qp", "0", 0);
 	if (ret < 0)
@@ -234,7 +237,7 @@ int init_video_stream(ENCODER *encoder)
 		return ret;
 	}
 */	
-	//²»ÑÓÊ±£¬²»ÔÚ±àÂëÆ÷ÄÚ»º³åÖ¡
+	//ä¸å»¶æ—¶ï¼Œä¸åœ¨ç¼–ç å™¨å†…ç¼“å†²å¸§
 	ret = av_opt_set(codec_ctx->priv_data, "tune", "zerolatency", 0);
 	if (ret < 0)
 	{
@@ -242,7 +245,7 @@ int init_video_stream(ENCODER *encoder)
 		return ret;
 	}
 
-	//´ò¿ªÊÓÆµ±àÂëÆ÷
+	//æ‰“å¼€è§†é¢‘ç¼–ç å™¨
 	ret = avcodec_open2(codec_ctx, codec, NULL);
 	if (ret < 0)
 	{
@@ -277,7 +280,7 @@ int init_audio_stream(ENCODER *encoder)
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
 	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 
-	//²éÕÒ±àÂëÆ÷
+	//æŸ¥æ‰¾ç¼–ç å™¨
 	codec = avcodec_find_encoder(AV_CODEC_ID_AAC);
 	if (!codec)
 	{
@@ -336,7 +339,7 @@ int init_record_file(ENCODER *encoder)
 	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 	if (encoder->record)
 	{
-		//´ò¿ªÎÄ¼þ
+		//æ‰“å¼€æ–‡ä»¶
 		if (!(encoder->fmt_ctx->oformat->flags & AVFMT_NOFILE))
 		{
 			ret = avio_open(&encoder->fmt_ctx->pb, encoder->record_file, AVIO_FLAG_WRITE);
@@ -347,7 +350,7 @@ int init_record_file(ENCODER *encoder)
 			}
 		}
 
-		//ÈÝÆ÷Ê×²¿
+		//å®¹å™¨é¦–éƒ¨
 		ret = avformat_write_header(encoder->fmt_ctx, NULL);
 		if (ret < 0)
 		{
@@ -571,7 +574,7 @@ int encode_video(void *source, int source_width, int source_height,
 		return ret;
 	}
 
-	//Éú³Ésource frame
+	//ç”Ÿæˆsource frame
 	frame = av_frame_alloc();
 	if (!frame)
 	{
@@ -592,13 +595,13 @@ int encode_video(void *source, int source_width, int source_height,
 	frame->linesize[1] = source_width/2;
 	frame->linesize[2] = source_width/2;
 
-	frame->data[0] = (uint8_t *)source;//ÁÁ¶ÈY
-	frame->data[1] = (uint8_t *)source + source_width * source_height * 5 / 4;//É«¶ÈU
-	frame->data[2] = (uint8_t *)source + source_width * source_height;//É«¶ÈV
+	frame->data[0] = (uint8_t *)source;//äº®åº¦Y
+	frame->data[1] = (uint8_t *)source + source_width * source_height * 5 / 4;//è‰²åº¦U
+	frame->data[2] = (uint8_t *)source + source_width * source_height;//è‰²åº¦V
 //	frame->pts = encoder->video_pts++;
 //	printf("pts = %d\n", frame->pts);
 
-	//³õÊ¼»¯¸ñÊ½×ª»»ÉÏÏÂÎÄ
+	//åˆå§‹åŒ–æ ¼å¼è½¬æ¢ä¸Šä¸‹æ–‡
 	sws_ctx = sws_getContext(source_width, source_height, encoder->video_codec_ctx->pix_fmt,
 		encoder->width, encoder->height, encoder->video_codec_ctx->pix_fmt,
 		SWS_BILINEAR, NULL, NULL, NULL);
@@ -608,7 +611,7 @@ int encode_video(void *source, int source_width, int source_height,
 		goto FAILED;
 	}
 
-	//×ª»»
+	//è½¬æ¢
 	ret = sws_scale(sws_ctx, (const uint8_t * const*)frame->data,
 						frame->linesize, 0, source_height, 
 						encoder->video_frame->data, encoder->video_frame->linesize);
@@ -619,7 +622,7 @@ int encode_video(void *source, int source_width, int source_height,
 		goto FAILED;
 	}
 
-	//³õÊ¼»¯packet
+	//åˆå§‹åŒ–packet
 	av_init_packet(&encoder->video_packet);
 	encoder->video_packet.data = NULL;
 	encoder->video_packet.size = 0;
@@ -782,7 +785,7 @@ int fflush_encoder()
 		return ret;
 	}
 
-	//Ë¢ÐÂÊÓÆµ±àÂëÆ÷ÄÚ²¿µÄÑÓÊ±Ö¡Êý¾Ý
+	//åˆ·æ–°è§†é¢‘ç¼–ç å™¨å†…éƒ¨çš„å»¶æ—¶å¸§æ•°æ®
 	while (1)
 	{
 		av_init_packet(&encoder->video_packet);
@@ -812,7 +815,7 @@ int fflush_encoder()
 		}
 	}
 
-	//Ë¢ÐÂÒôÆµ±àÂëÆ÷ÄÚ²¿µÄÑÓÊ±Ö¡Êý¾Ý
+	//åˆ·æ–°éŸ³é¢‘ç¼–ç å™¨å†…éƒ¨çš„å»¶æ—¶å¸§æ•°æ®
 	while (1)
 	{
 		av_init_packet(&encoder->audio_packet);
