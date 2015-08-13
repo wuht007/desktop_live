@@ -228,7 +228,7 @@ int init_video_stream(ENCODER *encoder)
 
 
 
-	//delete
+	//add by wht np++
 	//qp
 	ret = av_opt_set(codec_ctx->priv_data, "qp", "0", 0);
 	if (ret < 0)
