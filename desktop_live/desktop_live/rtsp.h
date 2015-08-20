@@ -1,9 +1,8 @@
 #ifndef __RTSP_H__
 #define __RTSP_H__
 
-#include "list.h"
 #include <WinSock2.h>
-
+#include "list.h"
 
 
 enum describe_mode

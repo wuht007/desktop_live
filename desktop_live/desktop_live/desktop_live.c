@@ -192,22 +192,17 @@ int send_rtp(struct list_head *rtsp_head, char *send_buf, int size, int type)
 	int ret = 0;
 	struct list_head *p_rtsp_list = NULL;
 	struct list_head *p_rtp_list = NULL;
-	if (0 == list_empty(rtsp_head))
+
+	list_for_each(p_rtsp_list, rtsp_head)
 	{
-		list_for_each(p_rtsp_list, rtsp_head)
+		RTSP *rtsp = list_entry(p_rtsp_list, RTSP, list);
+		list_for_each(p_rtp_list, &rtsp->rtp_head)
 		{
-			RTSP *rtsp = list_entry(p_rtsp_list, RTSP, list);
-			if (0 == list_empty(&rtsp->rtp_head))
+			RTP *rtp = list_entry(p_rtp_list, RTP, list);
+			if (rtp->type == type)//stream_type::video)
 			{
-				list_for_each(p_rtp_list, &rtsp->rtp_head) 
-				{
-					RTP *rtp = list_entry(p_rtp_list, RTP, list);
-					if (rtp->type == type)//stream_type::video)
-					{
-						ret = sendto(rtp->rtp_socket, send_buf, size, 0, 
-							(SOCKADDR *)&rtp->dest_addr, sizeof(SOCKADDR));
-					}
-				}
+				ret = sendto(rtp->rtp_socket, send_buf, size, 0,
+					(SOCKADDR *)&rtp->dest_addr, sizeof(SOCKADDR));
 			}
 		}
 	}
@@ -242,9 +237,8 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 					static unsigned short sq = 34763;
 					char *nal = nalu;
 					int nal_len = nalu_len;
-					char rtp_hdr[12] = {0};
-					char imp = 0;
-					char type = 0;
+					NALU_HEADER nalu_hdr = {0};
+					RTP_HEADER rtp_hdr = {0};
 					char send_buf[1500] = {0};
 					int first = 0;
 
@@ -256,23 +250,21 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 						nal_len--;
 					nal_len--;
 
-					imp &= 0x0;
-					imp |= (*nal);
-					imp &= 0xe0;
+					*(unsigned char *)(&nalu_hdr) = *nal;
 
-					type &= 0x0;
-					type |= (*nal);
-					type &= 0x1f;
-
-					rtp_hdr[0] = 0x80;
-					rtp_hdr[1] = 0xe0;
-					*(unsigned int *)&rtp_hdr[4] = htonl(pts/1024*9000);
-					*(unsigned int *)&rtp_hdr[8] = htonl(2906685981);
+					rtp_hdr.v = 2;
+					rtp_hdr.p = 0;
+					rtp_hdr.x = 0;
+					rtp_hdr.cc = 0;
+					rtp_hdr.pt = 96;
+					rtp_hdr.m = 1;
+					rtp_hdr.timestamp = htonl(pts/1024*9000);
+					rtp_hdr.ssrc = htonl(2906685981);
 
 					if (nal_len < 1400)
 					{
-						*(unsigned short *)&rtp_hdr[2] = htons(sq++);
-						memcpy(send_buf, &rtp_hdr, 12);
+						rtp_hdr.sn = htons(sq++);
+						memcpy(send_buf, &rtp_hdr, sizeof(RTP_HEADER));
 						memcpy(send_buf+12, nal, nal_len);
 
 						send_rtp(rtsp_head, send_buf, 12+nal_len, 0);//stream_type::video);
@@ -284,17 +276,22 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 					while(nal_len > 0)
 					{				
 						memset(send_buf, 0, sizeof(send_buf));
-						*(unsigned short *)&rtp_hdr[2] = htons(sq++);
+						rtp_hdr.sn = htons(sq++);
 						if (nal_len < 1400)
 						{
-							rtp_hdr[1] = 0xe0;
-							memcpy(send_buf, &rtp_hdr, 12);
-							send_buf[12] |= 0x1c;
-							send_buf[12] |= imp;
+							rtp_hdr.m = 1;
+							memcpy(send_buf, &rtp_hdr, sizeof(RTP_HEADER));
+
+							((FU_INDICATOR *)&send_buf[12])->TYPE = 28;
+							((FU_INDICATOR *)&send_buf[12])->F = nalu_hdr.F;
+							((FU_INDICATOR *)&send_buf[12])->NRI = nalu_hdr.NRI;
 
 							//尾包
-							send_buf[13] |= 0x40;
-							send_buf[13] |= type;
+							((FU_HEADER *)&send_buf[13])->S = 0;
+							((FU_HEADER *)&send_buf[13])->E = 1;
+							((FU_HEADER *)&send_buf[13])->R = 0;
+							((FU_HEADER *)&send_buf[13])->TYPE = nalu_hdr.TYPE;
+
 							memcpy(send_buf+14, nal, nal_len);
 
 							send_rtp(rtsp_head, send_buf, 14+nal_len, 0);//stream_type::video);
@@ -303,19 +300,21 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 						}
 						else
 						{
-							//						rtp_hdr.marker = 0;
-							rtp_hdr[1] = 0x60;
+							rtp_hdr.m = 0;
 							memcpy(send_buf, &rtp_hdr, 12);
 							//0x1c=28 FU-A
-							send_buf[12] = 0x1c;
-							send_buf[12] |= imp;
+							((FU_INDICATOR *)&send_buf[12])->TYPE = 28;
+							((FU_INDICATOR *)&send_buf[12])->F = nalu_hdr.F;
+							((FU_INDICATOR *)&send_buf[12])->NRI = nalu_hdr.NRI;
 
 							if (first == 0)
 							{
 								first = 1;
 								//首包
-								send_buf[13] |= 0x80;
-								send_buf[13] |= type;
+								((FU_HEADER *)&send_buf[13])->S = 1;
+								((FU_HEADER *)&send_buf[13])->E = 0;
+								((FU_HEADER *)&send_buf[13])->R = 0;
+								((FU_HEADER *)&send_buf[13])->TYPE = nalu_hdr.TYPE;
 								//去掉前面的开始码 如 65 67 68等等
 								nal += 1;
 								nal_len -= 1;
@@ -323,8 +322,10 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 							else
 							{
 								//中间包
-								send_buf[13] &= 0x0;
-								send_buf[13] |= type;
+								((FU_HEADER *)&send_buf[13])->S = 0;
+								((FU_HEADER *)&send_buf[13])->E = 0;
+								((FU_HEADER *)&send_buf[13])->R = 0;
+								((FU_HEADER *)&send_buf[13])->TYPE = nalu_hdr.TYPE;
 							}
 
 							memcpy(send_buf+14, nal, 1400);
@@ -338,7 +339,6 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 				free(dest);
 			}
 		}
-
 		free(data);
 	}
 
@@ -360,17 +360,20 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 			{
 				for (i=0; i<ap_len; i++)
 				{
-					char rtp_hdr[12] = {0};
-
 					unsigned short data_len =0;
 					char send_buf[1500] = {0};
-					rtp_hdr[0] = 0x80;
-					rtp_hdr[1] = 0xe1;
-					*(unsigned short *)&rtp_hdr[2] = htons(sq++);
-					*(unsigned int *)&rtp_hdr[4] = htonl(ap[i].pts);
-					*(unsigned int *)&rtp_hdr[8] = htonl(1584216996);
+					RTP_HEADER rtp_hdr = {0};
+					rtp_hdr.v = 2;
+					rtp_hdr.p = 0;
+					rtp_hdr.x = 0;
+					rtp_hdr.cc = 0;
+					rtp_hdr.m = 1;
+					rtp_hdr.pt = 97;
+					rtp_hdr.sn = htons(sq++);
+					rtp_hdr.timestamp = htonl(ap[i].pts);
+					rtp_hdr.ssrc = htonl(1584216996);
 
-					memcpy(send_buf, rtp_hdr, 12);
+					memcpy(send_buf, &rtp_hdr, sizeof(RTP_HEADER));
 					send_buf[12] = 0x00;
 					send_buf[13] = 0x10;
 					send_buf[14] = ap[i].size >> 5;
@@ -382,7 +385,8 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 					free(ap[i].data);
 				}
 			}
-		}		
+		}
+
 		free(data);
 	}
 
@@ -431,37 +435,32 @@ int handle_recv(struct list_head *rtsp_head, RTSP *rtsp, char *recv_buf, int siz
 int do_read(SERVER *server, struct list_head *rtsp_head)
 {
 	int ret = 0;
-	struct list_head *plist;
+	struct list_head *plist, *n;
 
 	if (FD_ISSET(server->listen_socket,&server->rfds))
 	{
 		ret = add_client(server, rtsp_head);
 	}
 	
-	while (0 == list_empty(rtsp_head))
+	list_for_each_safe(plist, n, rtsp_head)
 	{
-		list_for_each(plist, rtsp_head)
+		RTSP *rtsp = list_entry(plist, RTSP, list);
+		if (FD_ISSET(rtsp->rtsp_socket, &server->rfds))
 		{
-			RTSP *rtsp = list_entry(plist, RTSP, list);
-			if (FD_ISSET(rtsp->rtsp_socket, &server->rfds))
+			char recv_buf[2048] = {0};
+			char send_buf[2048] = {0};
+			FD_CLR(rtsp->rtsp_socket, &server->rfds);
+			ret = recv(rtsp->rtsp_socket, recv_buf, 2048, 0);
+			if (ret > 0)
 			{
-				char recv_buf[2048] = {0};
-				char send_buf[2048] = {0};
-				FD_CLR(rtsp->rtsp_socket, &server->rfds);
-				ret = recv(rtsp->rtsp_socket, recv_buf, 2048, 0);
-				if (ret > 0)
-				{
-					rtsp->send_buf = send_buf;
-					handle_recv(rtsp_head, rtsp, recv_buf, ret);
-				}
-				else
-				{
-					//连接失效，释放所有该rtsp会话的资源
-				}
-				break;
+				rtsp->send_buf = send_buf;
+				handle_recv(rtsp_head, rtsp, recv_buf, ret);
+			}
+			else
+			{
+				//连接失效，释放所有该rtsp会话的资源
 			}
 		}
-		break;
 	}
 
 	ret = 0;
@@ -471,28 +470,21 @@ int do_read(SERVER *server, struct list_head *rtsp_head)
 int free_rtsp_connection(struct list_head *rtsp_head)
 {
 	int ret = 0;
-	struct list_head *p_rtsp_list = NULL;
-	struct list_head *p_rtp_list = NULL;
-	while (0 == list_empty(rtsp_head))
+	struct list_head *p_rtsp_list = NULL, *n1;
+	struct list_head *p_rtp_list = NULL, *n2;
+
+	list_for_each_safe(p_rtsp_list, n1, rtsp_head)
 	{
-		list_for_each(p_rtsp_list, rtsp_head)
+		RTSP *rtsp = list_entry(p_rtsp_list, RTSP, list);
+		list_for_each_safe(p_rtp_list, n2,&rtsp->rtp_head)
 		{
-			RTSP *rtsp = list_entry(p_rtsp_list, RTSP, list);
-			while (0 == list_empty(&rtsp->rtp_head))
-			{
-				list_for_each(p_rtp_list, &rtsp->rtp_head) 
-				{
-					RTP *rtp = list_entry(p_rtp_list, RTP, list);
-					list_del(p_rtp_list);
-					free(rtp);
-					break;
-				}
-			}
-			list_del(p_rtsp_list);
-			closesocket(rtsp->rtsp_socket);
-			free(rtsp);
-			break;
+			RTP *rtp = list_entry(p_rtp_list, RTP, list);
+			list_del(p_rtp_list);
+			free(rtp);
 		}
+		list_del(p_rtsp_list);
+		closesocket(rtsp->rtsp_socket);
+		free(rtsp);
 	}
 
 	ret = 0;
@@ -553,7 +545,7 @@ int main(int argc, char **argv)
 
 	while (server.i--)
 	{
-		struct list_head *plist;
+		struct list_head *plist, *n;
 		ret = select(0, &server.rfds, NULL, NULL, &server.tv);
 		if (ret < 0)
 		{
@@ -571,13 +563,10 @@ int main(int argc, char **argv)
 
 		FD_ZERO(&server.rfds);
 		FD_SET(server.listen_socket, &server.rfds);
-		if (0 == list_empty(&rtsp_head))
+		list_for_each_safe(plist, n, &rtsp_head)
 		{
-			list_for_each(plist, &rtsp_head)
-			{
-				RTSP *rtsp = list_entry(plist, RTSP, list);
-				FD_SET(rtsp->rtsp_socket, &server.rfds);
-			}
+			RTSP *rtsp = list_entry(plist, RTSP, list);
+			FD_SET(rtsp->rtsp_socket, &server.rfds);
 		}
 	}
 

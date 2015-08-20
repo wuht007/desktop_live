@@ -94,7 +94,7 @@ int init_encoder_video_param(ENCODER *encoder)
 	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
 
 	
-	encoder->fps = GetPrivateProfileIntA("encode", "fps", 10, config_file);
+	encoder->fps = GetPrivateProfileIntA("encode", "fps", 5, config_file);
 	encoder->width = GetPrivateProfileIntA("encode", "width", 1366, config_file);
 	encoder->height = GetPrivateProfileIntA("encode", "height", 768, config_file);
 	encoder->bit_rate = GetPrivateProfileIntA("encode", "bit_rate", 400000, config_file);
@@ -207,7 +207,7 @@ int init_video_stream(ENCODER *encoder)
 	codec_ctx->bit_rate = bit_rate;//码率
 	codec_ctx->max_qdiff = 3;
 	codec_ctx->qmin = 18;
-	codec_ctx->qmax = 18;//取值可能是0-51 越接近51，视频质量越模糊
+	codec_ctx->qmax = 20;//取值可能是0-51 越接近51，视频质量越模糊
 	codec_ctx->qcompress = 0.6;
 
 	//编码速度快 slower superfast
