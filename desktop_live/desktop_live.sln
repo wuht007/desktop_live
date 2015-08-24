@@ -2,16 +2,35 @@
 Microsoft Visual Studio Solution File, Format Version 11.00
 # Visual Studio 2010
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "desktop_live", "desktop_live\desktop_live.vcxproj", "{2CB79E36-2B2F-4678-8EA7-EA55A4561EAD}"
+	ProjectSection(ProjectDependencies) = postProject
+		{9BD5062A-A786-49B6-8E4E-7EDF321D916F} = {9BD5062A-A786-49B6-8E4E-7EDF321D916F}
+		{AB7F5642-6A19-477A-97A9-A75869F402A3} = {AB7F5642-6A19-477A-97A9-A75869F402A3}
+		{FA54D9CF-0D58-4295-B635-F50644D22C7E} = {FA54D9CF-0D58-4295-B635-F50644D22C7E}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "capture", "capture\capture.vcxproj", "{FA54D9CF-0D58-4295-B635-F50644D22C7E}"
+	ProjectSection(ProjectDependencies) = postProject
+		{9BD5062A-A786-49B6-8E4E-7EDF321D916F} = {9BD5062A-A786-49B6-8E4E-7EDF321D916F}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "log", "log\log.vcxproj", "{9BD5062A-A786-49B6-8E4E-7EDF321D916F}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "encode", "encode\encode.vcxproj", "{AB7F5642-6A19-477A-97A9-A75869F402A3}"
+	ProjectSection(ProjectDependencies) = postProject
+		{9BD5062A-A786-49B6-8E4E-7EDF321D916F} = {9BD5062A-A786-49B6-8E4E-7EDF321D916F}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "encode_test", "encode_test\encode_test.vcxproj", "{D99677BC-0381-4D64-BBFC-5672B57A54DE}"
+	ProjectSection(ProjectDependencies) = postProject
+		{9BD5062A-A786-49B6-8E4E-7EDF321D916F} = {9BD5062A-A786-49B6-8E4E-7EDF321D916F}
+		{AB7F5642-6A19-477A-97A9-A75869F402A3} = {AB7F5642-6A19-477A-97A9-A75869F402A3}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "capture_test", "capture_test\capture_test.vcxproj", "{89E1E0C2-8BA2-42D1-8E9C-56FF2C75D08E}"
+	ProjectSection(ProjectDependencies) = postProject
+		{9BD5062A-A786-49B6-8E4E-7EDF321D916F} = {9BD5062A-A786-49B6-8E4E-7EDF321D916F}
+		{FA54D9CF-0D58-4295-B635-F50644D22C7E} = {FA54D9CF-0D58-4295-B635-F50644D22C7E}
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
