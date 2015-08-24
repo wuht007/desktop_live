@@ -185,7 +185,7 @@ int init_video_stream(ENCODER *encoder)
 
 	stream->id = VIDEO_STREAM_INDEX;
 	stream->time_base.num = 1;
-	stream->time_base.den = fps;
+	stream->time_base.den = 90000;//fps;
 	codec_ctx = stream->codec;
 	codec_ctx->codec_type = AVMEDIA_TYPE_VIDEO;
 	codec_ctx->width = width;
@@ -652,8 +652,9 @@ int encode_video(void *source, int source_width, int source_height,
 		}
 
 		*dest_size = encoder->video_packet.size;
-		*pts = encoder->video_packet.pts;
-		*dts = encoder->video_packet.dts;
+		*pts = (float)encoder->video_packet.pts / encoder->video_stream->time_base.den * 90000;
+		//*pts = encoder->video_packet.pts;
+		//*dts = encoder->video_packet.dts;
 		*dest = (void *)malloc(*dest_size);
 		if (!dest)
 		{

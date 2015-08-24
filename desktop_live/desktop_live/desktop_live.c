@@ -232,6 +232,7 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 				char *encode_data = dest;
 				int nalu_len = 0;
 				char *nalu = NULL;
+
 				while((nalu = find_nalu(&encode_data, dest_size, &nalu_len)) != NULL)
 				{
 					static unsigned short sq = 34763;
@@ -258,7 +259,7 @@ int send_media(SERVER *server, struct list_head *rtsp_head)
 					rtp_hdr.cc = 0;
 					rtp_hdr.pt = 96;
 					rtp_hdr.m = 1;
-					rtp_hdr.timestamp = htonl(pts/1024*9000);
+					rtp_hdr.timestamp = htonl(pts);//htonl(pts/1024*9000);
 					rtp_hdr.ssrc = htonl(2906685981);
 
 					if (nal_len < 1400)
