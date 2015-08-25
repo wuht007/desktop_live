@@ -85,10 +85,10 @@ void get_screen_info(SCREEN *screen, LOG *log)
 	HBITMAP old_bitmap = NULL;
 	BITMAP bmp;
 
-	int left=0;
-	int top=0;
-	int right=GetSystemMetrics(SM_CXSCREEN);
-	int bottom=GetSystemMetrics(SM_CYSCREEN);
+	int left = 0;
+	int top = 0;
+	int right = GetSystemMetrics(SM_CXSCREEN);
+	int bottom = GetSystemMetrics(SM_CYSCREEN);
 
 	char log_str[1024] = {0};
 
@@ -98,26 +98,29 @@ void get_screen_info(SCREEN *screen, LOG *log)
 	screen->width = right - left;
 	screen->height = bottom - top;
 
-	sprintf(log_str, ">>%s:%d screen->width=%d screen->height=%d\r\n",__FUNCTION__, __LINE__, screen->width, screen->height);
+	sprintf(log_str, ">>%s:%d screen->width=%d screen->height=%d\r\n",
+					__FUNCTION__, __LINE__, screen->width, screen->height);
 	print_log(log, LOG_INFO, log_str);
 
 	src = CreateDC("DISPLAY", NULL, NULL, NULL);
 	mem = CreateCompatibleDC(src);
+
 	bitmap = CreateCompatibleBitmap(src, screen->width, screen->height);
 	old_bitmap = (HBITMAP)SelectObject(mem, bitmap);
-	BitBlt(mem, 0, 0, screen->width, screen->height, src, 0, 0,SRCCOPY);
+
+	BitBlt(mem, 0, 0, screen->width, screen->height, src, 0, 0, SRCCOPY);
 	bitmap = (HBITMAP)SelectObject(mem, old_bitmap);
-	GetObject(bitmap,sizeof(BITMAP),&bmp);
+	GetObject(bitmap, sizeof(BITMAP), &bmp);
 
 	screen->bitmap_channel = bmp.bmBitsPixel == 1 ? 1 : bmp.bmBitsPixel/8 ;
 	screen->bitmap_depth = bmp.bmBitsPixel == 1 ? 1 : 8;//IPL_DEPTH_1U : IPL_DEPTH_8U;
 	screen->bitmap_width = bmp.bmWidth;
 	screen->bitmap_height = bmp.bmHeight;
-	screen->len = screen->bitmap_channel * (screen->bitmap_depth / 8) * \
+	screen->len = screen->bitmap_channel * (screen->bitmap_depth/8) * \
 					screen->bitmap_width * screen->bitmap_height;
 
-	sprintf(log_str, ">>%s:%d screen->bitmap_width=%d screen->bitmap_height=%d\r\n"
-					,__FUNCTION__, __LINE__, screen->bitmap_width, screen->bitmap_height);
+	sprintf(log_str, ">>%s:%d screen->bitmap_width=%d screen->bitmap_height=%d\r\n",
+						__FUNCTION__, __LINE__, screen->bitmap_width, screen->bitmap_height);
 	print_log(log, LOG_INFO, log_str);
 
 	SelectObject(mem,old_bitmap);
@@ -136,7 +139,6 @@ void get_screen_info(SCREEN *screen, LOG *log)
 int init_capture_video_param(GV *global_var, SCREEN *screen, VIDEO *video, LOG *log)
 {
 	int ret = -1;
-
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
@@ -151,7 +153,8 @@ int init_capture_video_param(GV *global_var, SCREEN *screen, VIDEO *video, LOG *
 		ret = -1;
 		return ret;
 	}
-	sprintf(log_str, " %s:%d video->yuv = malloc %d\r\n",__FUNCTION__, __LINE__, video->yuv_len);
+	sprintf(log_str, " %s:%d video->yuv = malloc %d\r\n", 
+						__FUNCTION__, __LINE__, video->yuv_len);
 	print_log(log, LOG_DEBUG, log_str);
 
 	video->rgba_len =  screen->bitmap_width * screen->bitmap_height * \
@@ -162,7 +165,8 @@ int init_capture_video_param(GV *global_var, SCREEN *screen, VIDEO *video, LOG *
 		ret = -2;
 		return ret;
 	}
-	sprintf(log_str, " %s:%d video->rgba = malloc %d\r\n",__FUNCTION__, __LINE__, video->rgba_len);
+	sprintf(log_str, " %s:%d video->rgba = malloc %d\r\n", 
+						__FUNCTION__, __LINE__, video->rgba_len);
 	print_log(log, LOG_DEBUG, log_str);
 
 	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
@@ -261,7 +265,7 @@ BOOL RGBA2YUV(LPBYTE RgbaBuf,UINT nWidth,UINT nHeight,LPBYTE yuvBuf,unsigned lon
 			}
 		}
 	}
-	*len = nWidth * nHeight+(nWidth * nHeight)/2;
+	*len = nWidth * nHeight + (nWidth*nHeight)/2;
 	return TRUE;
 } 
 
@@ -287,9 +291,11 @@ static int enqueue(struct list_head *head, uint8_t *data, unsigned long size)
 		ret = -2;
 		return ret;
 	}
+
 	memcpy(node->data, data, size);
 	node->size = size;
 	list_add_tail(&node->list, head);
+
 	ret = 0;
 	return ret;
 }
@@ -317,8 +323,10 @@ static int dequeue(struct list_head *head, uint8_t **data, unsigned long *size)
 			ret = -2;
 			return ret;
 		}
+
 		*size = node->size;
 		memcpy(*data, node->data, node->size);
+
 		list_del(plist);
 		free(node->data);
 		free(node);
@@ -336,8 +344,9 @@ unsigned int __stdcall video_capture_proc(void *p)
 	int ret = 0;
 	VIDEO video = {0};
 	SCREEN screen = {0};
-	unsigned int step_time;
-	DWORD start,end;
+	unsigned int step_time = 0;
+	DWORD start = 0;
+	DWORD end = 0;
 	GV *global_var = (GV *)p;
 	LOG *log = global_var->log;
 	char log_str[1024] = {0};
@@ -357,7 +366,7 @@ unsigned int __stdcall video_capture_proc(void *p)
 		return ret;
 	}
 	
-	step_time = 1000/video.fps;
+	step_time = 1000 / video.fps;
 
 	while (!global_var->stop)
 	{
@@ -451,7 +460,7 @@ int start_wave(AUDIO *audio, WAVEFORMATEX *waveformat,
 	waveformat->nAvgBytesPerSec = audio->avg_bytes_per_sec;					//平均码率
 	waveformat->nBlockAlign = audio->channels * audio->bits_per_sample / 8;	//声道数*每个样本占的字节数
 	waveformat->wBitsPerSample = audio->bits_per_sample;					//样本占的位数
-	waveformat->cbSize=0;													//特别信息计数
+	waveformat->cbSize = 0;													//特别信息计数
 
 	ret = waveInOpen(wavein, WAVE_MAPPER, waveformat, (DWORD)NULL, 0L, CALLBACK_NULL);
 	if (ret != MMSYSERR_NOERROR)
@@ -460,7 +469,7 @@ int start_wave(AUDIO *audio, WAVEFORMATEX *waveformat,
 		return ret;
 	}
 
-	for (i = 0; i < HDRCOUNT; i++)
+	for (i=0; i<HDRCOUNT; i++)
 	{
 		wavehdr[i] = (WAVEHDR*)malloc(size + sizeof(WAVEHDR));
 		if (NULL == wavehdr[i])
@@ -471,9 +480,9 @@ int start_wave(AUDIO *audio, WAVEFORMATEX *waveformat,
 		sprintf(log_str, " %s:%d wavehdr[%d] = malloc %d\r\n",__FUNCTION__, __LINE__, i, size + sizeof(WAVEHDR));
 		print_log(log, LOG_DEBUG, log_str);
 
-		memset(wavehdr[i], 0, size+sizeof(WAVEHDR));
+		memset(wavehdr[i], 0, size + sizeof(WAVEHDR));
 		wavehdr[i]->dwBufferLength = size;
-		wavehdr[i]->lpData = (LPSTR)(wavehdr[i]+1);//(LPSTR)((char *)wavehdr[i]+sizeof(WAVEHDR));
+		wavehdr[i]->lpData = (LPSTR)(wavehdr[i] + 1);//(LPSTR)((char *)wavehdr[i]+sizeof(WAVEHDR));
 
 		ret = waveInPrepareHeader(*wavein, wavehdr[i], sizeof(WAVEHDR));
 		if (ret != MMSYSERR_NOERROR)
@@ -516,8 +525,8 @@ unsigned int __stdcall audio_capture_proc(void *p)
 	const int HDRCOUNT = 10;
 	int hdr = 0;
 	WAVEHDR *wavehdr[10];
-	WAVEFORMATEX waveformat;
-	HWAVEIN wavein;
+	WAVEFORMATEX waveformat = {0};
+	HWAVEIN wavein = {0};
 	char log_str[1024] = {0};
 
 	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
@@ -685,6 +694,7 @@ int get_video_frame(void **data, unsigned long *size, int *width, int *hetgit)
 		ret = -2;
 	*width = gv->width;
 	*hetgit = gv->height;
+
 	return ret;
 }
 
@@ -751,20 +761,19 @@ int free_capture()
 
 	for (i=0; i<2; i++)
 	{
-		struct list_head *plist = NULL;
+		struct list_head *plist = NULL, *n = NULL;
 
 		EnterCriticalSection(&gv->cs[i]);
-		while (0 == list_empty(&gv->head[i]))
+
+		list_for_each_safe(plist, n, &gv->head[i]) 
 		{
-			list_for_each(plist, &gv->head[i]) 
-			{
-				NODE *node = list_entry(plist, struct node, list);
-				list_del(plist);
-				free(node->data);
-				free(node);
-				break;
-			}
+			NODE *node = list_entry(plist, struct node, list);
+			list_del(plist);
+			free(node->data);
+			free(node);
+			break;
 		}
+
 		LeaveCriticalSection(&gv->cs[i]);
 		DeleteCriticalSection(&gv->cs[i]);
 	}

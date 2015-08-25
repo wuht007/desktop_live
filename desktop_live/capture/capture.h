@@ -24,7 +24,7 @@ extern "C"
 DLLIMPORT int start_capture(LOG *log, char *config_file);
 
 //四个参数都是输出参数，保存数据的指针的地址、保存数据长度的地址、宽度的地址、高度的地址
-//0=成功 其他=失败
+//0=成功 其他=失败,函数执行成功需要释放data
 //获取一帧video
 DLLIMPORT int get_video_frame(void **data, unsigned long *size, int *width, int *hetgit);
 
