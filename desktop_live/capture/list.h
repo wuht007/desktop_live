@@ -84,14 +84,14 @@ static __inline void INIT_LIST_HEAD(struct list_head *list)
  * This is only for internal list manipulation where we know
  * the prev/next entries already!
  */
-static __inline void __list_add(struct list_head *new_head,
+static __inline void __list_add(struct list_head *new_node,
                   struct list_head *prev,
                   struct list_head *next)
 {
-    next->prev = new_head;
-    new_head->next = next;
-    new_head->prev = prev;
-    prev->next = new_head;
+    next->prev = new_node;
+    new_node->next = next;
+    new_node->prev = prev;
+    prev->next = new_node;
 }
 
 /**
@@ -102,9 +102,9 @@ static __inline void __list_add(struct list_head *new_head,
  * Insert a new entry after the specified head.
  * This is good for implementing stacks.
  */
-static __inline void list_add(struct list_head *new_head, struct list_head *head)
+static __inline void list_add(struct list_head *new_node, struct list_head *head)
 {
-    __list_add(new_head, head, head->next);
+    __list_add(new_node, head, head->next);
 }
 
 /**
@@ -115,9 +115,9 @@ static __inline void list_add(struct list_head *new_head, struct list_head *head
  * Insert a new entry before the specified head.
  * This is useful for implementing queues.
  */
-static __inline void list_add_tail(struct list_head *new_head, struct list_head *head)
+static __inline void list_add_tail(struct list_head *new_node, struct list_head *head)
 {
-    __list_add(new_head, head->prev, head);
+    __list_add(new_node, head->prev, head);
 }
 
 /*
