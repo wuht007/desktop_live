@@ -1,10 +1,6 @@
 #ifndef __LOG_H__
 #define __LOG_H__
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <Windows.h>
-
 #define BUILDING_DLL 1
 
 #if BUILDING_DLL
@@ -20,50 +16,40 @@ extern "C"
 {
 #endif
 
-#define LOG_DEBUG		0
-#define	LOG_INFO		1
-#define	LOG_WARNING		2
-#define	LOG_ERROR		3
+#define MYDEBUG 1
+#if MYDEBUG
+#define PRINT_LOG(level, format, ...) \
+	print_log(level, format, __VA_ARGS__)
+#else
+#define PRINT_LOG(level, format, ...)
+#endif
 
-enum LEVEL
+#define INITED		0
+#define OPEN_FAILED -1
+#define INIT_SECCESS 1
+#define NOINIT		-2
+#define LOW_LEVEL	-3
+
+
+typedef enum level
 {
-	ENUM_DEBUG	= 0,
-	ENUM_INFO	= 1,
-	ENUM_WARNING= 2,
-	ENUM_ERROR	= 3
-};
+	LOG_DEBUG	= 0,
+	LOG_INFO	= 1,
+	LOG_WARNING = 2,
+	LOG_ERROR	= 3
+}LEVEL;
 
-enum OUT_WAY
+typedef enum out_way
 {
-	OUT_FILE=0,
-	OUT_STDOUT=1
-};
+	OUT_FILE   = 0,
+	OUT_STDOUT = 1
+}OUT_WAY;
 
-typedef struct logpriv
-{
-	enum LEVEL log_level;
-	enum OUT_WAY out_way;
-	FILE *file;
-	RTL_CRITICAL_SECTION cs;
-}LOG_PRIV;
+DLLIMPORT int init_log(LEVEL level, OUT_WAY out_way);
 
-typedef struct
-{
-	struct logpriv log_priv;
-}LOG;
+DLLIMPORT int print_log(LEVEL level, char *format, ...);
 
-//参数文件名、输出级别、输出方式
-//成功返回LOG指针，失败返回NULL
-//作用初始化LOG
-DLLIMPORT LOG *init_log(char *file_name, unsigned int level, unsigned int out_way);
-
-//参数日志指针、本条日志的级别、日志内容
-//返回值>0表示成功 <0表示失败
-DLLIMPORT int print_log(LOG *log, unsigned int log_level, char *log_str);
-
-//释放日志
 DLLIMPORT void free_log();
-
 #ifdef __cplusplus
 };
 #endif

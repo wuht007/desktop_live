@@ -1,79 +1,93 @@
+#include <Windows.h>
+#include <stdio.h>
+#include <time.h>
+
 #include "log.h"
 
-LOG *g_log = NULL;
-
-//返回值:>=0 表示成功 <0 表示失败
-//描述:根据log中的系数输出日志
-int print_log(LOG *log, unsigned int log_level, char *log_str)
+typedef struct log
 {
-	int ret = 0;
-	if (NULL == log)
+	int initialized;
+	LEVEL log_level;
+	OUT_WAY out_way;
+	FILE *fp;
+	RTL_CRITICAL_SECTION cs;
+}LOG;
+
+static LOG s_log = {0};
+
+int init_log(LEVEL level, OUT_WAY out_way)
+{
+	time_t timer;
+	struct tm *tblock;
+	char file[MAX_PATH] = {0};
+
+	if (s_log.initialized)
 	{
-		ret = -1;
-		return ret;
-	}
-	if (log_level < (unsigned int)log->log_priv.log_level)
-	{
-		ret = -2;
-		return ret;
+		return INITED;
 	}
 
-	if (log->log_priv.out_way == OUT_FILE)
+	s_log.initialized = 1;
+	s_log.log_level = level;
+	s_log.out_way = out_way;
+
+	timer = time(NULL);
+	tblock = localtime(&timer);
+	sprintf(file, "./%04d-%02d-%02d-%02d-%02d-%02d.txt",
+		tblock->tm_year+1900, tblock->tm_mon+1, tblock->tm_mday,
+		tblock->tm_hour, tblock->tm_min, tblock->tm_sec);
+	s_log.fp = fopen(file, "w+");
+	if (!s_log.fp)
 	{
-		EnterCriticalSection(&log->log_priv.cs);
-		fprintf(log->log_priv.file,"%d ",log_level);
-		ret = fwrite(log_str, strlen((const char *)log_str), 1, log->log_priv.file);
-		fflush(log->log_priv.file);
-		LeaveCriticalSection(&log->log_priv.cs);
-		return ret;
-	} 
-	else if (log->log_priv.out_way == OUT_STDOUT)
-	{
-		EnterCriticalSection(&log->log_priv.cs);
-		printf("%s\n", log_str);
-		fflush(stdout);
-		LeaveCriticalSection(&log->log_priv.cs);
+		return OPEN_FAILED;
 	}
 
-	return 0;
+	InitializeCriticalSection(&s_log.cs);
+	return INIT_SECCESS;
 }
 
-LOG *init_log(char *file_name, unsigned int log_level, unsigned int out_way)
+int print_log(LEVEL level, char *format, ...)
 {
-	if (NULL != g_log)
+	va_list args;
+	int i = 0, ret = 0;
+	char str[2048] = {0};
+
+	if (0 == s_log.initialized)
 	{
-		//不推荐使用init_log获取log,请使用传参的方式
-		return NULL;
+		return NOINIT;
 	}
 
-	g_log = (LOG *)malloc(sizeof(LOG));
-	if (NULL == g_log)
+	if (level < s_log.log_level)
 	{
-		return NULL;
+		return LOW_LEVEL;
 	}
-	memset(g_log, 0, sizeof(LOG));
 
-	g_log->log_priv.log_level = (enum LEVEL)log_level;
-	g_log->log_priv.out_way = (enum OUT_WAY)out_way;
-	g_log->log_priv.file = fopen(file_name, "w+");
-	if (NULL == g_log->log_priv.file)
+	va_start(args, format);
+	i = vsprintf(str, format, args);
+
+	EnterCriticalSection(&s_log.cs);
+
+	if (s_log.out_way == OUT_FILE)
 	{
-		free(g_log);
-		return NULL;
+		fprintf(s_log.fp, "%d : ", level);
+		ret = fwrite(str, 1, i, s_log.fp);
 	}
-	InitializeCriticalSection(&g_log->log_priv.cs);
+	else if (s_log.out_way == OUT_STDOUT)
+	{
+		printf("%d %s", level, str);
+	}
 
-	return g_log;
+	LeaveCriticalSection(&s_log.cs);
+
+	return ret;
 }
 
 void free_log()
 {
-	if (NULL == g_log)
+	if (0 == s_log.initialized)
 	{
 		return ;
 	}
-	fclose(g_log->log_priv.file);
-	DeleteCriticalSection(&g_log->log_priv.cs);
-	free(g_log);
+	s_log.initialized = 0;
+	fclose(s_log.fp);
+	DeleteCriticalSection(&s_log.cs);
 }
-
