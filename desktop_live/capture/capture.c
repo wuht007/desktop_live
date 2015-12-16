@@ -1,10 +1,10 @@
-#include "capture.h"
-#include "list.h"
 #include <process.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <Windows.h>
+#include "capture.h"
+#include "list.h"
 
 #ifndef MIN
 #  define MIN(a,b)  ((a) > (b) ? (b) : (a))
@@ -31,7 +31,7 @@ typedef struct
 	unsigned long rgba_len;
 	unsigned long yuv_len;
 	int fps;
-}VIDEO;
+}VIDEO, *PVIDEO;
 
 typedef struct  
 {
@@ -47,7 +47,7 @@ typedef struct
 
 	//一帧位图的数据长度 h*w*d*c
 	long len;
-}SCREEN;
+}SCREEN, *PSCREEN;
 
 typedef struct 
 {
@@ -58,26 +58,31 @@ typedef struct
 
 	unsigned long pcm_len;
 	uint8_t *pcm;
-}AUDIO;
+}AUDIO, *PAUDIO;
 
-typedef struct global_variable
+typedef struct capture
 {
+	int initialized;
+	int started;
+#define ARRAY_LEN	2
 #define VIDEO_INDEX 0
 #define AUDIO_INDEX 1
 	HANDLE handler[2];
 	int stop;
-	LOG *log;
-	char config_file[MAX_PATH];
 	RTL_CRITICAL_SECTION cs[2];
 	struct list_head head[2];
 	int width;
 	int height;
-}GV;
 
-static GV *gv = NULL;
+	AUDIO audio;
+	VIDEO video;
+	SCREEN screen;
+}CAPTURE, *PCAPTURE;
+
+static CAPTURE s_capture = {0};
 
 //描述:获取屏幕的宽高，屏幕位图的宽高、深度、通道数、一帧位图的长度
-void get_screen_info(SCREEN *screen, LOG *log)
+void GetScreenInfo(PSCREEN pScreen)
 {
 	HDC src = NULL;
 	HDC mem = NULL;
@@ -90,38 +95,30 @@ void get_screen_info(SCREEN *screen, LOG *log)
 	int right = GetSystemMetrics(SM_CXSCREEN);
 	int bottom = GetSystemMetrics(SM_CYSCREEN);
 
-	char log_str[1024] = {0};
+	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log(log, LOG_DEBUG, log_str);
-
-	screen->width = right - left;
-	screen->height = bottom - top;
-
-	sprintf(log_str, ">>%s:%d screen->width=%d screen->height=%d\r\n",
-					__FUNCTION__, __LINE__, screen->width, screen->height);
-	print_log(log, LOG_INFO, log_str);
+	pScreen->width = right - left;
+	pScreen->height = bottom - top;
 
 	src = CreateDC("DISPLAY", NULL, NULL, NULL);
 	mem = CreateCompatibleDC(src);
 
-	bitmap = CreateCompatibleBitmap(src, screen->width, screen->height);
+	bitmap = CreateCompatibleBitmap(src, pScreen->width, pScreen->height);
 	old_bitmap = (HBITMAP)SelectObject(mem, bitmap);
 
-	BitBlt(mem, 0, 0, screen->width, screen->height, src, 0, 0, SRCCOPY);
+	BitBlt(mem, 0, 0, pScreen->width, pScreen->height, src, 0, 0, SRCCOPY);
 	bitmap = (HBITMAP)SelectObject(mem, old_bitmap);
 	GetObject(bitmap, sizeof(BITMAP), &bmp);
 
-	screen->bitmap_channel = bmp.bmBitsPixel == 1 ? 1 : bmp.bmBitsPixel/8 ;
-	screen->bitmap_depth = bmp.bmBitsPixel == 1 ? 1 : 8;//IPL_DEPTH_1U : IPL_DEPTH_8U;
-	screen->bitmap_width = bmp.bmWidth;
-	screen->bitmap_height = bmp.bmHeight;
-	screen->len = screen->bitmap_channel * (screen->bitmap_depth/8) * \
-					screen->bitmap_width * screen->bitmap_height;
+	pScreen->bitmap_channel = bmp.bmBitsPixel == 1 ? 1 : bmp.bmBitsPixel/8 ;
+	pScreen->bitmap_depth = bmp.bmBitsPixel == 1 ? 1 : 8;//IPL_DEPTH_1U : IPL_DEPTH_8U;
+	pScreen->bitmap_width = bmp.bmWidth;
+	pScreen->bitmap_height = bmp.bmHeight;
+	pScreen->len = pScreen->bitmap_channel * (pScreen->bitmap_depth/8) * \
+					pScreen->bitmap_width * pScreen->bitmap_height;
 
-	sprintf(log_str, ">>%s:%d screen->bitmap_width=%d screen->bitmap_height=%d\r\n",
-						__FUNCTION__, __LINE__, screen->bitmap_width, screen->bitmap_height);
-	print_log(log, LOG_INFO, log_str);
+	PRINTLOG(LOG_INFO, "screen->width=%d screen->height=%d screen->bitmap_width=%d screen->bitmap_height=%d screen->len=%d\n",
+					   pScreen->width, pScreen->height, pScreen->bitmap_width, pScreen->bitmap_height, pScreen->len);
 
 	SelectObject(mem,old_bitmap);
 	DeleteObject(old_bitmap);
@@ -130,54 +127,22 @@ void get_screen_info(SCREEN *screen, LOG *log)
 	DeleteDC(mem);
 	DeleteObject(bitmap);
 
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log(log, LOG_DEBUG, log_str);
+	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 }
 
-//返回值:0=成功 其他=失败
-//描述:初始化配置文件中的视频参数
-int init_capture_video_param(GV *global_var, SCREEN *screen, VIDEO *video, LOG *log)
+int InitCaptureVideoParam(PSCREEN pScreen, PVIDEO pVideo, PCAPTURECONFIG pCaptureConfig)
 {
-	int ret = -1;
-	char log_str[1024] = {0};
+	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log(log, LOG_DEBUG, log_str);
+	pVideo->fps = pCaptureConfig->fps;
+	PRINTLOG(LOG_INFO,"pVideo->fps = %d\n", pVideo->fps);
 
-	video->fps = GetPrivateProfileIntA("capture", "fps", 10, global_var->config_file);
-	video->yuv_len = screen->bitmap_width * \
-						screen->bitmap_height*2;
-	video->yuv = (uint8_t *)malloc(video->yuv_len);
-	if (!video->yuv)
-	{
-		ret = -1;
-		return ret;
-	}
-	sprintf(log_str, " %s:%d video->yuv = malloc %d\r\n", 
-						__FUNCTION__, __LINE__, video->yuv_len);
-	print_log(log, LOG_DEBUG, log_str);
-
-	video->rgba_len =  screen->bitmap_width * screen->bitmap_height * \
-						screen->bitmap_channel * (screen->bitmap_depth/8);
-	video->rgba = (uint8_t *)malloc(video->rgba_len);
-	if (!video->rgba)
-	{
-		ret = -2;
-		return ret;
-	}
-	sprintf(log_str, " %s:%d video->rgba = malloc %d\r\n", 
-						__FUNCTION__, __LINE__, video->rgba_len);
-	print_log(log, LOG_DEBUG, log_str);
-
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log(log, LOG_DEBUG, log_str);
-
-	ret = 0;
-	return ret;
+	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
+	return INIT_SECCESS;
 }
 
 //描述:把桌面设备的内存位图复制到video->rgba
-void copy_screen_bitmap(SCREEN *screen, VIDEO *video, LOG *log)
+void CopyScreenBitmap(PSCREEN pScreen, PVIDEO pVideo)
 {
 	HDC src = NULL;
 	HDC mem = NULL;
@@ -186,12 +151,12 @@ void copy_screen_bitmap(SCREEN *screen, VIDEO *video, LOG *log)
 
 	src = CreateDC("DISPLAY", NULL, NULL, NULL);
 	mem = CreateCompatibleDC(src);
-	bitmap = CreateCompatibleBitmap(src, screen->width, screen->height);
+	bitmap = CreateCompatibleBitmap(src, pScreen->width, pScreen->height);
 	old_bitmap = (HBITMAP)SelectObject(mem, bitmap);
 
-	BitBlt(mem, 0, 0, screen->width, screen->height, src, 0, 0 , SRCCOPY);
+	BitBlt(mem, 0, 0, pScreen->width, pScreen->height, src, 0, 0 , SRCCOPY);
 	bitmap = (HBITMAP)SelectObject(mem, old_bitmap);
-	GetBitmapBits(bitmap, screen->len, video->rgba);
+	GetBitmapBits(bitmap, pScreen->len, pVideo->rgba);
 	
 	SelectObject(mem,old_bitmap);
 	DeleteObject(old_bitmap);
@@ -337,136 +302,127 @@ static int dequeue(struct list_head *head, uint8_t **data, unsigned long *size)
 	return ret;
 }
 
-//返回值 0=成功 其他=失败
-//描述:采集视频的主逻辑，包括屏幕信息获取，配置文件参数获取，采集转码和入队
-unsigned int __stdcall video_capture_proc(void *p)
+int MallocVideobuffer(PSCREEN pScreen, PVIDEO pVideo)
 {
-	int ret = 0;
-	VIDEO video = {0};
-	SCREEN screen = {0};
+	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
+
+	pVideo->yuv_len = pScreen->bitmap_width * \
+		pScreen->bitmap_height*2;
+	pVideo->yuv = (uint8_t *)malloc(pVideo->yuv_len);
+	if (!pVideo->yuv)
+	{
+		return MALLOCFAILED;
+	}
+
+	PRINTLOG(LOG_DEBUG, "pVideo->yuv malloc %d\n", pVideo->yuv_len);
+
+	pVideo->rgba_len =  pScreen->bitmap_width * pScreen->bitmap_height * \
+		pScreen->bitmap_channel * (pScreen->bitmap_depth/8);
+	pVideo->rgba = (uint8_t *)malloc(pVideo->rgba_len);
+	if (!pVideo->rgba)
+	{
+		return MALLOCFAILED;
+	}
+
+	PRINTLOG(LOG_DEBUG, "pVideo->rgba malloc %d\n", pVideo->rgba_len);
+	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
+
+	return SECCESS;
+}
+
+//描述:采集视频的主逻辑，包括屏幕信息获取，配置文件参数获取，采集转码和入队
+unsigned int __stdcall VideoCaptureProc(void *p)
+{
 	unsigned int step_time = 0;
 	DWORD start = 0;
 	DWORD end = 0;
-	GV *global_var = (GV *)p;
-	LOG *log = global_var->log;
-	char log_str[1024] = {0};
 
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log(log, LOG_DEBUG, log_str);
+	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
-	get_screen_info(&screen, log);
-
-	global_var->width = screen.bitmap_width;
-	global_var->height = screen.bitmap_height;
-
-	ret = init_capture_video_param(global_var, &screen ,&video, log);
-	if (ret != 0)
+	if (SECCESS != 
+		MallocVideobuffer(&s_capture.screen, &s_capture.video))
 	{
-		ret = -1;
-		return ret;
+		return MALLOCFAILED;
 	}
-	
-	step_time = 1000 / video.fps;
 
-	while (!global_var->stop)
+	step_time = 1000 / s_capture.video.fps;
+	PRINTLOG(LOG_INFO, "capture step_time=%d\n", step_time);
+
+	while (0 == s_capture.stop)
 	{
 		start = timeGetTime();
-		copy_screen_bitmap(&screen ,&video, log);
-		RGBA2YUV((LPBYTE)video.rgba, 
-					screen.bitmap_width, 
-					screen.bitmap_height, 
-					(LPBYTE)video.yuv, 
-					&video.yuv_len, 
-					screen.bitmap_width*4);
+		CopyScreenBitmap(&s_capture.screen ,&s_capture.video);
+		RGBA2YUV((LPBYTE)s_capture.video.rgba, 
+					s_capture.screen.bitmap_width, 
+					s_capture.screen.bitmap_height, 
+					(LPBYTE)s_capture.video.yuv, 
+					&s_capture.video.yuv_len, 
+					s_capture.screen.bitmap_width*4);
 
-		EnterCriticalSection(&gv->cs[VIDEO_INDEX]);
-		ret = enqueue(&global_var->head[VIDEO_INDEX], video.yuv, video.yuv_len);
-		LeaveCriticalSection(&gv->cs[VIDEO_INDEX]);
-		if (0 != ret)
-		{
-			ret = -2;
-			return ret;
-		}
+		EnterCriticalSection(&s_capture.cs[VIDEO_INDEX]);
+		enqueue(&s_capture.head[VIDEO_INDEX], s_capture.video.yuv, s_capture.video.yuv_len);
+		LeaveCriticalSection(&s_capture.cs[VIDEO_INDEX]);
 
 		while((((end = timeGetTime()) - start) < step_time))
 			;
 	}
 
-	free(video.yuv);
-	sprintf(log_str, " %s:%d free video.yuv\r\n",__FUNCTION__, __LINE__);
-	print_log(log, LOG_DEBUG, log_str);
+	free(s_capture.video.yuv);
+	PRINTLOG(LOG_DEBUG, "free video.yuv\n");
 
-	free(video.rgba);
-	sprintf(log_str, " %s:%d free video.rgba\r\n",__FUNCTION__, __LINE__);
-	print_log(log, LOG_DEBUG, log_str);
+	free(s_capture.video.rgba);
+	PRINTLOG(LOG_DEBUG, "free video.rgba\n");
 
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log, LOG_DEBUG, log_str);
 
+	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 	return 0;
 }
 
-//描述:从配置文件中读出音频采集的基本参数，没读到采用默认值
-int init_capture_audio_param(GV *global_var, AUDIO *audio, WAVEFORMATEX *waveformat, LOG *log)
+void InitCaptureAudioParam(PAUDIO pAudio, PCAPTURECONFIG pCaptureConfig)
 {
-	int ret = 0;
-	char log_str[1024] = {0};
+	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log(log, LOG_DEBUG, log_str);
+	pAudio->channels = pCaptureConfig->channels;
+	pAudio->bits_per_sample = pCaptureConfig->bits_per_sample;
+	pAudio->samples_per_sec = pCaptureConfig->samples_per_sec;
+	pAudio->avg_bytes_per_sec = pCaptureConfig->avg_bytes_per_sec;
+	PRINTLOG(LOG_INFO, "pAudio->channels=%d pAudio->bits_per_sample=%d pAudio->samples_per_sec=%d pAudio->avg_bytes_per_sec=%d\n",
+		pAudio->channels, pAudio->bits_per_sample, pAudio->samples_per_sec, pAudio->avg_bytes_per_sec);
 
-	audio->channels = GetPrivateProfileIntA("capture", 
-												"channels", 2, global_var->config_file);
-	audio->bits_per_sample = GetPrivateProfileIntA("capture", 
-														"bits_per_sample", 16, global_var->config_file);
-	audio->samples_per_sec = GetPrivateProfileIntA("capture", 
-														"samples_per_sec", 48000, global_var->config_file);
-	audio->avg_bytes_per_sec = GetPrivateProfileIntA("capture", 
-														"avg_bytes_per_sec", 48000, global_var->config_file);
-
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log(log, LOG_DEBUG, log_str);
-
-	ret = 0;
-	return 0;
+	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 }
 
-//返回值 0=成功 其他=失败
 //描述:初始化并且开启wave采集
-int start_wave(AUDIO *audio, WAVEFORMATEX *waveformat, 
-				WAVEHDR **wavehdr, HWAVEIN *wavein, int HDRCOUNT, LOG *log)
+int StartWave(PAUDIO pAudio, PWAVEFORMATEX pWaveFormat, 
+				PWAVEHDR *wavehdr, HWAVEIN *wavein, const int HDRCOUNT)
 {
 	int ret = 0;
 	int i = 0;
 	int size = 1024*24;
-	char log_str[1024] = {0};
 
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log(log, LOG_DEBUG, log_str);
+	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
+	PRINTLOG(LOG_INFO, "wavein header buffer size=%d header count=%d\n",size, HDRCOUNT);
 
-	audio->pcm_len = 0;;
-	audio->pcm = (uint8_t *)malloc(size * HDRCOUNT);
-	if (NULL == audio->pcm)
+	pAudio->pcm_len = 0;
+	pAudio->pcm = (uint8_t *)malloc(size * HDRCOUNT);
+	if (NULL == pAudio->pcm)
 	{
-		ret = -1;
-		return ret;
+		return MALLOCFAILED;
 	}
-	sprintf(log_str, " %s:%d audio->pcm = malloc %d\r\n",__FUNCTION__, __LINE__, size * HDRCOUNT);
-	print_log(log, LOG_DEBUG, log_str);
+	PRINTLOG(LOG_DEBUG, "audio->pcm = malloc %d\n", size*HDRCOUNT);
 
-	waveformat->wFormatTag = WAVE_FORMAT_PCM;								//采样格式
-	waveformat->nChannels = audio->channels;								//声道数
-	waveformat->nSamplesPerSec = audio->samples_per_sec;					//采样率
-	waveformat->nAvgBytesPerSec = audio->avg_bytes_per_sec;					//平均码率
-	waveformat->nBlockAlign = audio->channels * audio->bits_per_sample / 8;	//声道数*每个样本占的字节数
-	waveformat->wBitsPerSample = audio->bits_per_sample;					//样本占的位数
-	waveformat->cbSize = 0;													//特别信息计数
+	pWaveFormat->wFormatTag = WAVE_FORMAT_PCM;								//采样格式
+	pWaveFormat->nChannels = pAudio->channels;								//声道数
+	pWaveFormat->nSamplesPerSec = pAudio->samples_per_sec;					//采样率
+	pWaveFormat->nAvgBytesPerSec = pAudio->avg_bytes_per_sec;					//平均码率
+	pWaveFormat->nBlockAlign = pAudio->channels * pAudio->bits_per_sample / 8;	//声道数*每个样本占的字节数
+	pWaveFormat->wBitsPerSample = pAudio->bits_per_sample;					//样本占的位数
+	pWaveFormat->cbSize = 0;													//特别信息计数
 
-	ret = waveInOpen(wavein, WAVE_MAPPER, waveformat, (DWORD)NULL, 0L, CALLBACK_NULL);
+	ret = waveInOpen(wavein, WAVE_MAPPER, pWaveFormat, (DWORD)NULL, 0L, CALLBACK_NULL);
 	if (ret != MMSYSERR_NOERROR)
 	{
-		ret = -2;
-		return ret;
+		return WAVEINOPENFAILED;
 	}
 
 	for (i=0; i<HDRCOUNT; i++)
@@ -474,11 +430,9 @@ int start_wave(AUDIO *audio, WAVEFORMATEX *waveformat,
 		wavehdr[i] = (WAVEHDR*)malloc(size + sizeof(WAVEHDR));
 		if (NULL == wavehdr[i])
 		{
-			ret = -3;
-			return ret;
+			return WAVEINOPENFAILED;
 		}
-		sprintf(log_str, " %s:%d wavehdr[%d] = malloc %d\r\n",__FUNCTION__, __LINE__, i, size + sizeof(WAVEHDR));
-		print_log(log, LOG_DEBUG, log_str);
+		PRINTLOG(LOG_DEBUG, "wavehdr[%d] = malloc %d\n", i, size*HDRCOUNT);
 
 		memset(wavehdr[i], 0, size + sizeof(WAVEHDR));
 		wavehdr[i]->dwBufferLength = size;
@@ -487,41 +441,31 @@ int start_wave(AUDIO *audio, WAVEFORMATEX *waveformat,
 		ret = waveInPrepareHeader(*wavein, wavehdr[i], sizeof(WAVEHDR));
 		if (ret != MMSYSERR_NOERROR)
 		{
-			ret = -4;
-			return ret;
+			return WAVEINPREPAREHEADERFAILED;
 		}
 
 		ret = waveInAddBuffer(*wavein, wavehdr[i], sizeof(WAVEHDR));
 		if (ret != MMSYSERR_NOERROR)
 		{
-			ret = -5;
-			return ret;
+			return WAVEINADDBUFFERFAILED;
 		}
 	}
 
 	ret = waveInStart(*wavein);
 	if (ret != MMSYSERR_NOERROR)
 	{
-		ret = -6;
-		return ret;
+		return WAVEINSTARTFAILED;
 	}
 
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log(log, LOG_DEBUG, log_str);
-
-	ret = 0;
-	return ret;
+	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
+	return SECCESS;
 }
 
-//返回值 0=成功 其他=失败
 //描述:音频采集主逻辑
-unsigned int __stdcall audio_capture_proc(void *p)
+unsigned int __stdcall AudioCaptureProc(void *p)
 {
-	int ret = 0, i = 0;
-	GV *global_var = (GV *)p;
-	AUDIO audio = {0};
-	LOG *log = global_var->log;
-	
+	int i = 0;
+	int ret = 0;
 	const int HDRCOUNT = 10;
 	int hdr = 0;
 	WAVEHDR *wavehdr[10];
@@ -529,63 +473,51 @@ unsigned int __stdcall audio_capture_proc(void *p)
 	HWAVEIN wavein = {0};
 	char log_str[1024] = {0};
 
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log(log, LOG_DEBUG, log_str);
+	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
-	ret = init_capture_audio_param(global_var, &audio, &waveformat, log);
-	if (0 != ret)
+	ret = StartWave(&s_capture.audio, &waveformat, &wavehdr[0], &wavein, HDRCOUNT);
+	if (SECCESS != ret)
 	{
-		ret = -2;
-		return ret;
-	}
-
-	ret = start_wave(&audio, &waveformat, &wavehdr[0], &wavein, HDRCOUNT, log);
-	if (0 != ret)
-	{
-		ret = -3;
+		PRINTLOG(LOG_ERROR, ">>%s %s %d StartWave failed ret = %d\n",
+			__FILE__, __FUNCTION__, __LINE__, ret);
 		return ret;
 	}
 
 
-	while (!global_var->stop)
+	while (0 == s_capture.stop)
 	{
 		Sleep(100);
 		while (wavehdr[hdr]->dwFlags & WHDR_DONE)
 		{
-			memcpy(audio.pcm + audio.pcm_len, wavehdr[hdr]->lpData, wavehdr[hdr]->dwBytesRecorded);
-			audio.pcm_len += wavehdr[hdr]->dwBytesRecorded;
+			memcpy(s_capture.audio.pcm + s_capture.audio.pcm_len,
+				wavehdr[hdr]->lpData, wavehdr[hdr]->dwBytesRecorded);
+			s_capture.audio.pcm_len += wavehdr[hdr]->dwBytesRecorded;
 			ret = waveInAddBuffer(wavein, wavehdr[hdr], sizeof(WAVEHDR));            
 			if (ret != MMSYSERR_NOERROR)
 			{
-				ret = -4;
-				return ret;
+				PRINTLOG(LOG_ERROR, ">>%s %s %d waveInAddBuffer failed ret = %d\n",
+					__FILE__, __FUNCTION__, __LINE__, ret);
+				return WAVEINADDBUFFERFAILED;
 			}
 			hdr = (hdr+1)%HDRCOUNT;
 		}
 
-		EnterCriticalSection(&gv->cs[AUDIO_INDEX]);
-		ret = enqueue(&gv->head[AUDIO_INDEX], audio.pcm, audio.pcm_len);
-		audio.pcm_len = 0;
-		LeaveCriticalSection(&gv->cs[AUDIO_INDEX]);
-		if (ret != 0)
-		{
-			ret = -5;
-			return ret;
-		}
+		EnterCriticalSection(&s_capture.cs[AUDIO_INDEX]);
+		enqueue(&s_capture.head[AUDIO_INDEX], s_capture.audio.pcm, s_capture.audio.pcm_len);
+		s_capture.audio.pcm_len = 0;
+		LeaveCriticalSection(&s_capture.cs[AUDIO_INDEX]);
 	}
 
 	ret = waveInStop(wavein);
 	if (ret != MMSYSERR_NOERROR) 
 	{
-		ret = -6;
-		return ret;
+		return WAVEINSTOPFAILED;
 	}
 
 	ret = waveInReset(wavein);
 	if (ret != MMSYSERR_NOERROR)
 	{
-		ret = -7;
-		return ret;
+		return WAVEINRESETFAILED;
 	}
 
 	for (i = 0; i < HDRCOUNT; i++)
@@ -597,175 +529,206 @@ unsigned int __stdcall audio_capture_proc(void *p)
 			return ret;
 		}
 		free(wavehdr[i]);
-		sprintf(log_str, " %s:%d free wavehdr[%d]\r\n",__FUNCTION__, __LINE__, i);
-		print_log(log, LOG_DEBUG, log_str);
+		PRINTLOG(LOG_DEBUG, "wavehdr[%d] free\n", i);
 	}
 
-	free(audio.pcm);
-	sprintf(log_str, " %s:%d free audio.pcm\r\n",__FUNCTION__, __LINE__);
-	print_log(log, LOG_DEBUG, log_str);
+	free(s_capture.audio.pcm);
+	PRINTLOG(LOG_DEBUG, "audio.pcm free\n");
 
 	ret = waveInClose(wavein);
 	if (ret != MMSYSERR_NOERROR)
 	{
-		ret = -9;
+		return WAVEINCLOSEFAILED;
+	}
+	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
+	return SECCESS;
+}
+
+int InitCapture(PCAPTURECONFIG pCaptureConfig)
+{
+	int ret;
+	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
+
+	if (1 == s_capture.initialized)
+	{
+		return INITED;
+	}
+
+	if (0 >= pCaptureConfig->fps ||
+		0 >= pCaptureConfig->channels ||
+		0 >= pCaptureConfig->bits_per_sample ||
+		0 >= pCaptureConfig->samples_per_sec ||
+		0 >= pCaptureConfig->avg_bytes_per_sec)
+	{
+		return WRONG_PARAM;
+	}
+
+	GetScreenInfo(&s_capture.screen);
+	ret = InitCaptureVideoParam(&s_capture.screen, &s_capture.video, pCaptureConfig);
+	if (ret != INIT_SECCESS)
+	{
 		return ret;
 	}
 
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log(log, LOG_DEBUG, log_str);
+	InitCaptureAudioParam(&s_capture.audio, pCaptureConfig);
 
-	ret = 0;
-	return 0;
+	s_capture.initialized = 1;
+	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
+	return SECCESS;
 }
 
-//返回值 0=成功 其他=失败
-//描述:初始化全局变量gv，开启两个线程采集视频和音频
-int start_capture(LOG *log, char *config_file)
+int StartCapture(PCAPTURECONFIG pCaptureConfig)
 {
 	int ret = 0;
 	int i = 0;
-	char log_str[1024] = {0};
 
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log(log, LOG_DEBUG, log_str);
+	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
-	if (gv != NULL)
+	if (s_capture.initialized != 1)
 	{
-		ret = -1;
-		return ret;
+		PRINTLOG(LOG_ERROR, "capture have no init\n");
+		return NOINIT;
 	}
 
-	gv = (GV *)malloc(sizeof(GV));
-	if (NULL == gv)
-	{
-		ret = -2;
-		return ret;
-	}
-	sprintf(log_str, " %s:%d gv = malloc %d\r\n",__FUNCTION__, __LINE__, sizeof(GV));
-	print_log((LOG *)log, LOG_DEBUG, log_str);
+	s_capture.stop = 0;
 
-	memset(gv, 0, sizeof(GV));
-	gv->stop = 0;
-	gv->log = log;
-	memcpy(gv->config_file, config_file, strlen(config_file));
 
-	for (i=0; i<2; i++)
+	for (i=0; i<ARRAY_LEN; i++)
 	{
-		INIT_LIST_HEAD(&gv->head[i]);
-		InitializeCriticalSection(&gv->cs[i]);
+		INIT_LIST_HEAD(&s_capture.head[i]);
+		InitializeCriticalSection(&s_capture.cs[i]);
 		if (VIDEO_INDEX == i)
-			gv->handler[i] = (HANDLE)_beginthreadex(NULL, 0, video_capture_proc, gv, 0, NULL);
+			s_capture.handler[i] = (HANDLE)_beginthreadex(NULL, 0, VideoCaptureProc, NULL, 0, NULL);
 		else if (AUDIO_INDEX == i)
-			gv->handler[i] = (HANDLE)_beginthreadex(NULL, 0, audio_capture_proc, gv, 0, NULL);
-		else
-			return ret = -3;
+			s_capture.handler[i] = (HANDLE)_beginthreadex(NULL, 0, AudioCaptureProc, NULL, 0, NULL);
 
-		if (NULL == gv->handler[i])
+		if (NULL == s_capture.handler[i])
 		{
-			free(gv);
-			gv = NULL;
-			ret = -4;
-			return ret;
+			PRINTLOG(LOG_ERROR, "start thread failed\n");
+			return STARTTHREADFAILED;
 		}
 	}
 
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log(log, LOG_DEBUG, log_str);
+	s_capture.started = 1;
+	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
-	ret = 0;
-	return ret;
+	return SECCESS;
 }
 
-//返回值 0=成功 其他=失败
 //描述:获取一帧采集视频数据
-int get_video_frame(void **data, unsigned long *size, int *width, int *hetgit)
+int GetVideoFrame(void **data, unsigned long *size, int *width, int *hetgit)
 {
 	int ret = 0;
-	if (NULL == data || NULL == size || NULL == gv)
+	if (NULL == data || NULL == size)
 	{
-		ret = -1;
-		return ret;
+		return WRONG_PARAM;
 	}
-	EnterCriticalSection(&gv->cs[VIDEO_INDEX]);
-	ret = dequeue(&gv->head[VIDEO_INDEX], (uint8_t **)data, size);
-	LeaveCriticalSection(&gv->cs[VIDEO_INDEX]);
-	if (ret != 0)
-		ret = -2;
-	*width = gv->width;
-	*hetgit = gv->height;
 
-	return ret;
+	if (1 != s_capture.initialized)
+	{
+		return NOINIT;
+	}
+
+	if (1 != s_capture.started)
+	{
+		return NOSTART;
+	}
+
+	EnterCriticalSection(&s_capture.cs[VIDEO_INDEX]);
+	ret = dequeue(&s_capture.head[VIDEO_INDEX], (uint8_t **)data, size);
+	LeaveCriticalSection(&s_capture.cs[VIDEO_INDEX]);
+	if (ret != 0)
+		return DEQUEUEFAILED;
+	*width = s_capture.screen.width;
+	*hetgit = s_capture.screen.height;
+
+	return SECCESS;
 }
 
-//返回值 0=成功 其他=失败
 //描述:获取一帧采集音频数据
-int get_audio_frame(void **data, unsigned long *size)
+int GetAudioFrame(void **data, unsigned long *size)
 {
 	int ret = 0;
-	if (NULL == data || NULL == size || NULL == gv)
+	if (NULL == data || NULL == size )
 	{
-		ret = -1;
-		return ret;
+		return WRONG_PARAM;
 	}
-	EnterCriticalSection(&gv->cs[AUDIO_INDEX]);
-	ret = dequeue(&gv->head[AUDIO_INDEX], (uint8_t **)data, size);
-	LeaveCriticalSection(&gv->cs[AUDIO_INDEX]);
+
+	if (1 != s_capture.initialized)
+	{
+		return NOINIT;
+	}
+
+	if (1 != s_capture.started)
+	{
+		return NOSTART;
+	}
+
+	EnterCriticalSection(&s_capture.cs[AUDIO_INDEX]);
+	ret = dequeue(&s_capture.head[AUDIO_INDEX], (uint8_t **)data, size);
+	LeaveCriticalSection(&s_capture.cs[AUDIO_INDEX]);
 	if (ret != 0)
-		ret = -2;
-	return ret;
+		return DEQUEUEFAILED;
+	return SECCESS;
 }
 
-//返回值 0=成功 其他=失败
 //描述:停止采集
-int stop_capture()
+int StopCapture()
 {
-	int ret = 0, i = 0;
-	char log_str[1024] = {0};
+	int i = 0;
 
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)gv->log, LOG_DEBUG, log_str);
-	if (NULL == gv)
+	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
+
+	if (s_capture.initialized != 1)
 	{
-		ret = -1;
-		return ret;
+		PRINTLOG(LOG_ERROR, "capture have no init\n");
+		return NOINIT;
 	}
 
-	gv->stop = 1;
-
-	for (i=0; i<2; i++)
+	if (1 != s_capture.started)
 	{
-		WaitForSingleObject(gv->handler[i],INFINITE);
+		PRINTLOG(LOG_ERROR, "capture have no start\n");
+		return NOSTART;
 	}
 
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)gv->log, LOG_DEBUG, log_str);
+	s_capture.stop = 1;
 
-	ret = 0;
-	return ret;
+	for (i=0; i<ARRAY_LEN; i++)
+	{
+		WaitForSingleObject(s_capture.handler[i],INFINITE);
+		s_capture.handler[i] = NULL;
+	}
+
+	s_capture.started = 0;
+	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
+
+	return SECCESS;
 }
 
 //释放采集所需要的资源
-int free_capture()
+int FreeCapture()
 {
 	int ret = 0, i = 0;
-	char log_str[1024] = {0};
+	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)gv->log, LOG_DEBUG, log_str);
-	if (NULL == gv)
+	if (s_capture.initialized != 1)
 	{
-		ret = -1;
-		return ret;
+		PRINTLOG(LOG_ERROR, "capture have no init\n");
+		return NOINIT;
 	}
 
-	for (i=0; i<2; i++)
+
+	for (i=0; i<ARRAY_LEN; i++)
 	{
 		struct list_head *plist = NULL, *n = NULL;
+		if (NULL != s_capture.handler[i])
+		{
+			return NOSTOP;
+		}
 
-		EnterCriticalSection(&gv->cs[i]);
+		EnterCriticalSection(&s_capture.cs[i]);
 
-		list_for_each_safe(plist, n, &gv->head[i]) 
+		list_for_each_safe(plist, n, &s_capture.head[i]) 
 		{
 			NODE *node = list_entry(plist, struct node, list);
 			list_del(plist);
@@ -774,18 +737,12 @@ int free_capture()
 			break;
 		}
 
-		LeaveCriticalSection(&gv->cs[i]);
-		DeleteCriticalSection(&gv->cs[i]);
+		LeaveCriticalSection(&s_capture.cs[i]);
+		DeleteCriticalSection(&s_capture.cs[i]);
 	}
-	sprintf(log_str, " %s:%d free gv\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)gv->log, LOG_DEBUG, log_str);
 
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)gv->log, LOG_DEBUG, log_str);
+	s_capture.initialized = 0;
+	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
-	if (gv)
-		free(gv);
-	gv = NULL;
-	ret = 0;
-	return ret;
+	return SECCESS;
 }

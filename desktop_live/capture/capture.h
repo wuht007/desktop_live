@@ -13,31 +13,48 @@
 
 typedef unsigned char uint8_t;
 
+typedef struct capture_config
+{
+	int fps;
+	int channels;
+	int bits_per_sample;
+	int	samples_per_sec;
+	int	avg_bytes_per_sec;
+}CAPTURECONFIG, *PCAPTURECONFIG;
+
+#define INITED 0
+#define WRONG_PARAM -1
+#define MALLOCFAILED -2
+#define NOINIT -3
+#define STARTTHREADFAILED -4
+#define WAVEINOPENFAILED -5
+#define WAVEINPREPAREHEADERFAILED -6
+#define WAVEINADDBUFFERFAILED -7
+#define WAVEINSTARTFAILED -8
+#define WAVEINSTOPFAILED -9
+#define WAVEINRESETFAILED -10
+#define WAVEINCLOSEFAILED -11
+#define DEQUEUEFAILED -12
+#define NOSTART -13
+#define NOSTOP -14
+#define SECCESS 1
+
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-//参数日志指针、配置文件
-//返回0=成功 其他失败
-//开始采集
-DLLIMPORT int start_capture(LOG *log, char *config_file);
+DLLIMPORT int InitCapture(PCAPTURECONFIG pCaptureConfig);
 
-//四个参数都是输出参数，保存数据的指针的地址、保存数据长度的地址、宽度的地址、高度的地址
-//0=成功 其他=失败,函数执行成功需要释放data
-//获取一帧video
-DLLIMPORT int get_video_frame(void **data, unsigned long *size, int *width, int *hetgit);
+DLLIMPORT int StartCapture();
 
-//保存数据的指针的地址、保存数据长度的地址
-//0=成功 其他=失败
-//获取一帧audio
-DLLIMPORT int get_audio_frame(void **data, unsigned long *size);
+DLLIMPORT int GetVideoFrame(void **data, unsigned long *size, int *width, int *hetgit);
 
-//停止采集
-DLLIMPORT int stop_capture();
+DLLIMPORT int GetAudioFrame(void **data, unsigned long *size);
 
-//释放采集所需要的资源
-DLLIMPORT int free_capture();
+DLLIMPORT int StopCapture();
+
+DLLIMPORT int FreeCapture();
 
 #ifdef __cplusplus
 };

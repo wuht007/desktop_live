@@ -18,17 +18,18 @@ extern "C"
 
 #define MYDEBUG 1
 #if MYDEBUG
-#define PRINT_LOG(level, format, ...) \
-	print_log(level, format, __VA_ARGS__)
+#define PRINTLOG(level, format, ...) \
+	PrintLog(level, format, __VA_ARGS__)
 #else
-#define PRINT_LOG(level, format, ...)
+#define PRINTLOG(level, format, ...)
 #endif
 
 #define INITED		0
 #define OPEN_FAILED -1
 #define INIT_SECCESS 1
-#define NOINIT		-2
-#define LOW_LEVEL	-3
+#define LOW_LEVEL	-2
+#define NOINIT		-3
+
 
 
 typedef enum level
@@ -39,17 +40,17 @@ typedef enum level
 	LOG_ERROR	= 3
 }LEVEL;
 
-typedef enum out_way
+typedef enum outWay
 {
 	OUT_FILE   = 0,
 	OUT_STDOUT = 1
-}OUT_WAY;
+}OUTWAY;
 
-DLLIMPORT int init_log(LEVEL level, OUT_WAY out_way);
+DLLIMPORT int InitLog(LEVEL level, OUTWAY outWay);
 
-DLLIMPORT int print_log(LEVEL level, char *format, ...);
+DLLIMPORT int PrintLog(LEVEL level, char *format, ...);
 
-DLLIMPORT void free_log();
+DLLIMPORT void FreeLog();
 #ifdef __cplusplus
 };
 #endif

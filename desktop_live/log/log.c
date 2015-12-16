@@ -7,15 +7,15 @@
 typedef struct log
 {
 	int initialized;
-	LEVEL log_level;
-	OUT_WAY out_way;
+	LEVEL logLevel;
+	OUTWAY outWay;
 	FILE *fp;
 	RTL_CRITICAL_SECTION cs;
 }LOG;
 
-static LOG s_log = {0};
+static LOG s_log = {0,LOG_DEBUG,OUT_STDOUT,NULL,0};
 
-int init_log(LEVEL level, OUT_WAY out_way)
+int InitLog(LEVEL level, OUTWAY outWay)
 {
 	time_t timer;
 	struct tm *tblock;
@@ -26,9 +26,8 @@ int init_log(LEVEL level, OUT_WAY out_way)
 		return INITED;
 	}
 
-	s_log.initialized = 1;
-	s_log.log_level = level;
-	s_log.out_way = out_way;
+	s_log.logLevel = level;
+	s_log.outWay = outWay;
 
 	timer = time(NULL);
 	tblock = localtime(&timer);
@@ -42,10 +41,12 @@ int init_log(LEVEL level, OUT_WAY out_way)
 	}
 
 	InitializeCriticalSection(&s_log.cs);
+
+	s_log.initialized = 1;
 	return INIT_SECCESS;
 }
 
-int print_log(LEVEL level, char *format, ...)
+int PrintLog(LEVEL level, char *format, ...)
 {
 	va_list args;
 	int i = 0, ret = 0;
@@ -56,7 +57,7 @@ int print_log(LEVEL level, char *format, ...)
 		return NOINIT;
 	}
 
-	if (level < s_log.log_level)
+	if (level < s_log.logLevel)
 	{
 		return LOW_LEVEL;
 	}
@@ -66,12 +67,13 @@ int print_log(LEVEL level, char *format, ...)
 
 	EnterCriticalSection(&s_log.cs);
 
-	if (s_log.out_way == OUT_FILE)
+	if (s_log.outWay == OUT_FILE)
 	{
-		fprintf(s_log.fp, "%d : ", level);
+		fprintf(s_log.fp, "%d : %d : ", GetCurrentThreadId(), level);
 		ret = fwrite(str, 1, i, s_log.fp);
+		fflush(s_log.fp);
 	}
-	else if (s_log.out_way == OUT_STDOUT)
+	else if (s_log.outWay == OUT_STDOUT)
 	{
 		printf("%d %s", level, str);
 	}
@@ -81,7 +83,7 @@ int print_log(LEVEL level, char *format, ...)
 	return ret;
 }
 
-void free_log()
+void FreeLog()
 {
 	if (0 == s_log.initialized)
 	{

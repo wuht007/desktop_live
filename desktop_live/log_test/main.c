@@ -10,12 +10,13 @@
 int main()
 {
 	int ret = 0;
-	//ret = init_log(LOG_DEBUG, OUT_FILE);
-	ret = init_log(LOG_DEBUG, OUT_STDOUT);
-	PRINT_LOG(LOG_DEBUG, "%s%d\n", "wuhongtao", 123);
-	PRINT_LOG(LOG_DEBUG, "%s%d\n", "wuhongtao", 456);
-	PRINT_LOG(LOG_DEBUG, "%s%d\n", "wuhongtao", 789);
-	free_log();
+	ret = InitLog(LOG_DEBUG, OUT_FILE);
+	//ret = InitLog(LOG_DEBUG, OUT_STDOUT);
+	PRINTLOG(LOG_DEBUG, "%s%d\n", "wuhongtao", 123, 999);
+	PRINTLOG(LOG_DEBUG, "%s%d\n", "wuhongtao");
+	PRINTLOG(LOG_DEBUG, "%s%d\n", "wuhongtao", 789);
+	PRINTLOG(LOG_DEBUG, "%s %d %s\n", __FILE__, __LINE__, __FUNCTION__);
+	FreeLog();
 	_CrtDumpMemoryLeaks();
 	return 0;
 }
