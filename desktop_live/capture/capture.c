@@ -17,70 +17,6 @@
 #pragma comment(lib, "Winmm.lib")
 #pragma comment(lib, "log.lib")
 
-typedef struct node
-{
-	uint8_t *data;
-	unsigned long size;
-	struct list_head list;
-}NODE;
-
-typedef struct
-{
-	uint8_t *yuv;
-	uint8_t *rgba;
-	unsigned long rgba_len;
-	unsigned long yuv_len;
-	int fps;
-}VIDEO, *PVIDEO;
-
-typedef struct  
-{
-	//屏幕宽高
-	int width;
-	int height;
-
-	//屏幕位图的宽高深度通道数
-	int bitmap_width;
-	int bitmap_height;
-	int bitmap_depth;
-	int bitmap_channel;
-
-	//一帧位图的数据长度 h*w*d*c
-	long len;
-}SCREEN, *PSCREEN;
-
-typedef struct 
-{
-	int channels;//2
-	int bits_per_sample;//16
-	int samples_per_sec;//48000
-	int avg_bytes_per_sec;//48000
-
-	unsigned long pcm_len;
-	uint8_t *pcm;
-}AUDIO, *PAUDIO;
-
-typedef struct capture
-{
-	int initialized;
-	int started;
-#define ARRAY_LEN	2
-#define VIDEO_INDEX 0
-#define AUDIO_INDEX 1
-	HANDLE handler[2];
-	int stop;
-	RTL_CRITICAL_SECTION cs[2];
-	struct list_head head[2];
-	int width;
-	int height;
-
-	AUDIO audio;
-	VIDEO video;
-	SCREEN screen;
-}CAPTURE, *PCAPTURE;
-
-static CAPTURE s_capture = {0};
-
 //描述:获取屏幕的宽高，屏幕位图的宽高、深度、通道数、一帧位图的长度
 void GetScreenInfo(PSCREEN pScreen)
 {
@@ -330,26 +266,52 @@ int MallocVideobuffer(PSCREEN pScreen, PVIDEO pVideo)
 	return SECCESS;
 }
 
+void WINAPI onTimeFunc(UINT wTimerID, UINT msg,DWORD dwUser,DWORD dwl,DWORD dw2)
+{
+	PCAPTURE pCapture = (PCAPTURE)dwUser;
+	if (1 != pCapture->stop)
+	{
+		CopyScreenBitmap(&pCapture->screen ,&pCapture->video);
+		RGBA2YUV((LPBYTE)pCapture->video.rgba, 
+			pCapture->screen.bitmap_width, 
+			pCapture->screen.bitmap_height, 
+			(LPBYTE)pCapture->video.yuv, 
+			&pCapture->video.yuv_len, 
+			pCapture->screen.bitmap_width*4);
+
+		EnterCriticalSection(&pCapture->cs[VIDEO_INDEX]);
+		enqueue(&pCapture->head[VIDEO_INDEX], pCapture->video.yuv, pCapture->video.yuv_len);
+		LeaveCriticalSection(&pCapture->cs[VIDEO_INDEX]);
+	}
+
+}
+
 //描述:采集视频的主逻辑，包括屏幕信息获取，配置文件参数获取，采集转码和入队
 unsigned int __stdcall VideoCaptureProc(void *p)
 {
 	unsigned int step_time = 0;
 	DWORD start = 0;
 	DWORD end = 0;
+	MMRESULT timer_id = 0;
+	PCAPTURE pCapture = (PCAPTURE)p;
 
 	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
 	if (SECCESS != 
-		MallocVideobuffer(&s_capture.screen, &s_capture.video))
+		MallocVideobuffer(&pCapture->screen, &pCapture->video))
 	{
+		PRINTLOG(LOG_ERROR, "%s %d MallocVideobuffer malloc failed\n", __FUNCTION__, __LINE__);
 		return MALLOCFAILED;
 	}
 
-	step_time = 1000 / s_capture.video.fps;
+	step_time = 1000 / pCapture->video.fps;
 	PRINTLOG(LOG_INFO, "capture step_time=%d\n", step_time);
 
-	while (0 == s_capture.stop)
+	timer_id = timeSetEvent(step_time, 10, onTimeFunc, (DWORD_PTR)pCapture, TIME_PERIODIC);
+
+/*	while (0 == s_capture.stop)
 	{
+		Sleep(100);
 		start = timeGetTime();
 		CopyScreenBitmap(&s_capture.screen ,&s_capture.video);
 		RGBA2YUV((LPBYTE)s_capture.video.rgba, 
@@ -362,15 +324,18 @@ unsigned int __stdcall VideoCaptureProc(void *p)
 		EnterCriticalSection(&s_capture.cs[VIDEO_INDEX]);
 		enqueue(&s_capture.head[VIDEO_INDEX], s_capture.video.yuv, s_capture.video.yuv_len);
 		LeaveCriticalSection(&s_capture.cs[VIDEO_INDEX]);
-
 		while((((end = timeGetTime()) - start) < step_time))
 			;
 	}
+*/
 
-	free(s_capture.video.yuv);
+	WaitForSingleObject(pCapture->hEvent[VIDEO_INDEX], INFINITE);
+	timeKillEvent(timer_id);
+
+	free(pCapture->video.yuv);
 	PRINTLOG(LOG_DEBUG, "free video.yuv\n");
 
-	free(s_capture.video.rgba);
+	free(pCapture->video.rgba);
 	PRINTLOG(LOG_DEBUG, "free video.rgba\n");
 
 
@@ -471,27 +436,27 @@ unsigned int __stdcall AudioCaptureProc(void *p)
 	WAVEHDR *wavehdr[10];
 	WAVEFORMATEX waveformat = {0};
 	HWAVEIN wavein = {0};
-	char log_str[1024] = {0};
+	PCAPTURE pCapture = (PCAPTURE)p;
 
 	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
-	ret = StartWave(&s_capture.audio, &waveformat, &wavehdr[0], &wavein, HDRCOUNT);
+	ret = StartWave(&pCapture->audio, &waveformat, &wavehdr[0], &wavein, HDRCOUNT);
 	if (SECCESS != ret)
 	{
-		PRINTLOG(LOG_ERROR, ">>%s %s %d StartWave failed ret = %d\n",
+		PRINTLOG(LOG_ERROR, ">>%s %s %d StartWave failed return code=%d\n",
 			__FILE__, __FUNCTION__, __LINE__, ret);
 		return ret;
 	}
 
 
-	while (0 == s_capture.stop)
+	while (0 == pCapture->stop)
 	{
 		Sleep(100);
 		while (wavehdr[hdr]->dwFlags & WHDR_DONE)
 		{
-			memcpy(s_capture.audio.pcm + s_capture.audio.pcm_len,
+			memcpy(pCapture->audio.pcm + pCapture->audio.pcm_len,
 				wavehdr[hdr]->lpData, wavehdr[hdr]->dwBytesRecorded);
-			s_capture.audio.pcm_len += wavehdr[hdr]->dwBytesRecorded;
+			pCapture->audio.pcm_len += wavehdr[hdr]->dwBytesRecorded;
 			ret = waveInAddBuffer(wavein, wavehdr[hdr], sizeof(WAVEHDR));            
 			if (ret != MMSYSERR_NOERROR)
 			{
@@ -502,11 +467,13 @@ unsigned int __stdcall AudioCaptureProc(void *p)
 			hdr = (hdr+1)%HDRCOUNT;
 		}
 
-		EnterCriticalSection(&s_capture.cs[AUDIO_INDEX]);
-		enqueue(&s_capture.head[AUDIO_INDEX], s_capture.audio.pcm, s_capture.audio.pcm_len);
-		s_capture.audio.pcm_len = 0;
-		LeaveCriticalSection(&s_capture.cs[AUDIO_INDEX]);
+		EnterCriticalSection(&pCapture->cs[AUDIO_INDEX]);
+		enqueue(&pCapture->head[AUDIO_INDEX], pCapture->audio.pcm, pCapture->audio.pcm_len);
+		pCapture->audio.pcm_len = 0;
+		LeaveCriticalSection(&pCapture->cs[AUDIO_INDEX]);
 	}
+
+	//WaitForSingleObject(pCapture->hEvent[AUDIO_INDEX], INFINITE);
 
 	ret = waveInStop(wavein);
 	if (ret != MMSYSERR_NOERROR) 
@@ -532,7 +499,7 @@ unsigned int __stdcall AudioCaptureProc(void *p)
 		PRINTLOG(LOG_DEBUG, "wavehdr[%d] free\n", i);
 	}
 
-	free(s_capture.audio.pcm);
+	free(pCapture->audio.pcm);
 	PRINTLOG(LOG_DEBUG, "audio.pcm free\n");
 
 	ret = waveInClose(wavein);
@@ -544,79 +511,96 @@ unsigned int __stdcall AudioCaptureProc(void *p)
 	return SECCESS;
 }
 
-int InitCapture(PCAPTURECONFIG pCaptureConfig)
+PCAPTURE InitCapture(PCAPTURECONFIG pCaptureConfig)
 {
 	int ret;
+	PCAPTURE pCapture = NULL;
 	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
-	if (1 == s_capture.initialized)
-	{
-		return INITED;
-	}
-
-	if (0 >= pCaptureConfig->fps ||
+	if (NULL == pCaptureConfig ||
+		0 >= pCaptureConfig->fps ||
 		0 >= pCaptureConfig->channels ||
 		0 >= pCaptureConfig->bits_per_sample ||
 		0 >= pCaptureConfig->samples_per_sec ||
 		0 >= pCaptureConfig->avg_bytes_per_sec)
 	{
-		return WRONG_PARAM;
+		PRINTLOG(LOG_ERROR, "%s %d pCaptureConfig param error\n", __FUNCTION__, __LINE__);
+		return NULL;
 	}
 
-	GetScreenInfo(&s_capture.screen);
-	ret = InitCaptureVideoParam(&s_capture.screen, &s_capture.video, pCaptureConfig);
+	pCapture = (PCAPTURE)malloc(sizeof(CAPTURE));
+	if (NULL == pCapture)
+	{
+		PRINTLOG(LOG_ERROR, "%s %d pCapture malloc failed\n", __FUNCTION__, __LINE__);
+		return NULL;
+	}
+	PRINTLOG(LOG_DEBUG,"pCapture = malloc %d\n", sizeof(CAPTURE));
+
+	memset(pCapture, 0, sizeof(CAPTURE));
+
+	GetScreenInfo(&pCapture->screen);
+	ret = InitCaptureVideoParam(&pCapture->screen, &pCapture->video, pCaptureConfig);
 	if (ret != INIT_SECCESS)
 	{
-		return ret;
+		PRINTLOG(LOG_ERROR, "%s %d InitCaptureVideoParam failed return code:%d\n", __FUNCTION__, __LINE__, ret);
+		free(pCapture);
+		return NULL;
 	}
 
-	InitCaptureAudioParam(&s_capture.audio, pCaptureConfig);
+	InitCaptureAudioParam(&pCapture->audio, pCaptureConfig);
 
-	s_capture.initialized = 1;
+	pCapture->initialized = 1;
 	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
-	return SECCESS;
+	return pCapture;
 }
 
-int StartCapture(PCAPTURECONFIG pCaptureConfig)
+int StartCapture(PCAPTURE pCapture)
 {
 	int ret = 0;
 	int i = 0;
 
 	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
-	if (s_capture.initialized != 1)
+	if (pCapture->initialized != 1)
 	{
-		PRINTLOG(LOG_ERROR, "capture have no init\n");
+		PRINTLOG(LOG_ERROR, "%s %d capture have no init\n", __FUNCTION__, __LINE__);
 		return NOINIT;
 	}
 
-	s_capture.stop = 0;
+	pCapture->stop = 0;
 
 
 	for (i=0; i<ARRAY_LEN; i++)
 	{
-		INIT_LIST_HEAD(&s_capture.head[i]);
-		InitializeCriticalSection(&s_capture.cs[i]);
-		if (VIDEO_INDEX == i)
-			s_capture.handler[i] = (HANDLE)_beginthreadex(NULL, 0, VideoCaptureProc, NULL, 0, NULL);
-		else if (AUDIO_INDEX == i)
-			s_capture.handler[i] = (HANDLE)_beginthreadex(NULL, 0, AudioCaptureProc, NULL, 0, NULL);
+		INIT_LIST_HEAD(&pCapture->head[i]);
+		InitializeCriticalSection(&pCapture->cs[i]);
+		pCapture->hEvent[i] = CreateEvent(NULL,FALSE,FALSE,NULL);
+		if (NULL == pCapture->hEvent[i])
+		{
+			PRINTLOG(LOG_ERROR, "create event failed\n");
+			return CREATE_EVENT_FAILED;
+		}
 
-		if (NULL == s_capture.handler[i])
+		if (VIDEO_INDEX == i)
+			pCapture->handler[i] = (HANDLE)_beginthreadex(NULL, 0, VideoCaptureProc, pCapture, 0, NULL);
+		else if (AUDIO_INDEX == i)
+			pCapture->handler[i] = (HANDLE)_beginthreadex(NULL, 0, AudioCaptureProc, pCapture, 0, NULL);
+
+		if (NULL == pCapture->handler[i])
 		{
 			PRINTLOG(LOG_ERROR, "start thread failed\n");
 			return STARTTHREADFAILED;
 		}
 	}
 
-	s_capture.started = 1;
+	pCapture->started = 1;
 	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
 	return SECCESS;
 }
 
 //描述:获取一帧采集视频数据
-int GetVideoFrame(void **data, unsigned long *size, int *width, int *hetgit)
+int GetVideoFrame(PCAPTURE pCapture, void **data, unsigned long *size, int *width, int *hetgit)
 {
 	int ret = 0;
 	if (NULL == data || NULL == size)
@@ -624,29 +608,29 @@ int GetVideoFrame(void **data, unsigned long *size, int *width, int *hetgit)
 		return WRONG_PARAM;
 	}
 
-	if (1 != s_capture.initialized)
+	if (1 != pCapture->initialized)
 	{
 		return NOINIT;
 	}
 
-	if (1 != s_capture.started)
+	if (1 != pCapture->started)
 	{
 		return NOSTART;
 	}
 
-	EnterCriticalSection(&s_capture.cs[VIDEO_INDEX]);
-	ret = dequeue(&s_capture.head[VIDEO_INDEX], (uint8_t **)data, size);
-	LeaveCriticalSection(&s_capture.cs[VIDEO_INDEX]);
+	EnterCriticalSection(&pCapture->cs[VIDEO_INDEX]);
+	ret = dequeue(&pCapture->head[VIDEO_INDEX], (uint8_t **)data, size);
+	LeaveCriticalSection(&pCapture->cs[VIDEO_INDEX]);
 	if (ret != 0)
 		return DEQUEUEFAILED;
-	*width = s_capture.screen.width;
-	*hetgit = s_capture.screen.height;
+	*width = pCapture->screen.width;
+	*hetgit = pCapture->screen.height;
 
 	return SECCESS;
 }
 
 //描述:获取一帧采集音频数据
-int GetAudioFrame(void **data, unsigned long *size)
+int GetAudioFrame(PCAPTURE pCapture, void **data, unsigned long *size)
 {
 	int ret = 0;
 	if (NULL == data || NULL == size )
@@ -654,64 +638,66 @@ int GetAudioFrame(void **data, unsigned long *size)
 		return WRONG_PARAM;
 	}
 
-	if (1 != s_capture.initialized)
+	if (1 != pCapture->initialized)
 	{
 		return NOINIT;
 	}
 
-	if (1 != s_capture.started)
+	if (1 != pCapture->started)
 	{
 		return NOSTART;
 	}
 
-	EnterCriticalSection(&s_capture.cs[AUDIO_INDEX]);
-	ret = dequeue(&s_capture.head[AUDIO_INDEX], (uint8_t **)data, size);
-	LeaveCriticalSection(&s_capture.cs[AUDIO_INDEX]);
+	EnterCriticalSection(&pCapture->cs[AUDIO_INDEX]);
+	ret = dequeue(&pCapture->head[AUDIO_INDEX], (uint8_t **)data, size);
+	LeaveCriticalSection(&pCapture->cs[AUDIO_INDEX]);
 	if (ret != 0)
 		return DEQUEUEFAILED;
 	return SECCESS;
 }
 
 //描述:停止采集
-int StopCapture()
+int StopCapture(PCAPTURE pCapture)
 {
 	int i = 0;
 
 	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
-	if (s_capture.initialized != 1)
+	if (pCapture->initialized != 1)
 	{
 		PRINTLOG(LOG_ERROR, "capture have no init\n");
 		return NOINIT;
 	}
 
-	if (1 != s_capture.started)
+	if (1 != pCapture->started)
 	{
 		PRINTLOG(LOG_ERROR, "capture have no start\n");
 		return NOSTART;
 	}
 
-	s_capture.stop = 1;
+	pCapture->stop = 1;
 
 	for (i=0; i<ARRAY_LEN; i++)
 	{
-		WaitForSingleObject(s_capture.handler[i],INFINITE);
-		s_capture.handler[i] = NULL;
+		SetEvent(pCapture->hEvent[i]);
+		WaitForSingleObject(pCapture->handler[i],INFINITE);
+		CloseHandle(pCapture->hEvent[i]);
+		pCapture->handler[i] = NULL;
 	}
 
-	s_capture.started = 0;
+	pCapture->started = 0;
 	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
 	return SECCESS;
 }
 
 //释放采集所需要的资源
-int FreeCapture()
+int FreeCapture(PCAPTURE pCapture)
 {
 	int ret = 0, i = 0;
 	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
-	if (s_capture.initialized != 1)
+	if (pCapture->initialized != 1)
 	{
 		PRINTLOG(LOG_ERROR, "capture have no init\n");
 		return NOINIT;
@@ -721,27 +707,28 @@ int FreeCapture()
 	for (i=0; i<ARRAY_LEN; i++)
 	{
 		struct list_head *plist = NULL, *n = NULL;
-		if (NULL != s_capture.handler[i])
+		if (NULL != pCapture->handler[i])
 		{
 			return NOSTOP;
 		}
 
-		EnterCriticalSection(&s_capture.cs[i]);
+		EnterCriticalSection(&pCapture->cs[i]);
 
-		list_for_each_safe(plist, n, &s_capture.head[i]) 
+		list_for_each_safe(plist, n, &pCapture->head[i]) 
 		{
 			NODE *node = list_entry(plist, struct node, list);
 			list_del(plist);
 			free(node->data);
 			free(node);
-			break;
 		}
 
-		LeaveCriticalSection(&s_capture.cs[i]);
-		DeleteCriticalSection(&s_capture.cs[i]);
+		LeaveCriticalSection(&pCapture->cs[i]);
+		DeleteCriticalSection(&pCapture->cs[i]);
 	}
 
-	s_capture.initialized = 0;
+	pCapture->initialized = 0;
+	free(pCapture);
+	PRINTLOG(LOG_DEBUG, "pCapture free\n");
 	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
 	return SECCESS;

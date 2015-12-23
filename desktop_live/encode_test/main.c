@@ -1,115 +1,119 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <Windows.h>
+#define _CRTDBG_MAP_ALLOC
+#include <crtdbg.h>
 #include "capture.h"
 #include "log.h"
 #include "encode.h"
-#include <stdio.h>
-#include <stdlib.h>
-#define _CRTDBG_MAP_ALLOC
-#include <crtdbg.h>
 
 #pragma comment(lib, "capture.lib")
 #pragma comment(lib, "log.lib")
 #pragma comment(lib, "encode.lib")
 #pragma comment(lib, "winmm.lib")
 
-int main()
+int main(int argc, char **argv)
 {
 	int ret = -1;
-	LOG *log;
-	char log_str[1024];
 	uint8_t *data = NULL;
-	char *config_file = "E:\\desktop_live\\desktop_live\\lib\\config.ini";
-	char *log_file = "D:\\desktop_live_log.txt";
-	char *record_file = "D:\\desktop_live.mp4";
 	unsigned long size = 0;
 	int times = 0;
-	int log_level;
-	int out_way;
 	int width = 0;
 	int height = 0;
 	char *dest = NULL;
 	unsigned long dest_size = 0;
 	long long pts = 0;
 	long long dts = 0;
-	DWORD start_time, end_time;
-	AUDIO_PACKET ap[30] = {0};
+	AUDIOPACKET ap[30] = {0};
 	int ap_len = 0;
 	int i = 0;
-	log_level = GetPrivateProfileIntA("log", 
-		"level", 0, config_file);
-	out_way = GetPrivateProfileIntA("log", 
-		"out_way", 0, config_file);
-	log = init_log(log_file , log_level, out_way); 
-	if (log == NULL)
+	CAPTURECONFIG captureConfig;
+	PCAPTURECONFIG pCaptureConfig = &captureConfig;
+	ENCODECONFIG encodeConfig;
+	PENCODECONFIG pEncodeConfig = &encodeConfig;
+	PENCODER pEncoder;
+	PCAPTURE pCapture;
+	pCaptureConfig->fps = 6;
+	pCaptureConfig->channels = 2;
+	pCaptureConfig->bits_per_sample = 16;
+	pCaptureConfig->samples_per_sec = 48000;
+	pCaptureConfig->avg_bytes_per_sec = 48000;
+
+	pEncodeConfig->fps = 6;
+	pEncodeConfig->width = 720;
+	pEncodeConfig->height = 480;
+	pEncodeConfig->bit_rate = 400000;
+	pEncodeConfig->channels = 2;
+	pEncodeConfig->bits_per_sample = 16;
+	pEncodeConfig->sample_rate = 48000;
+	pEncodeConfig->avg_bytes_per_sec = 48000;
+	pEncodeConfig->record = 1;
+
+	memcpy(pEncodeConfig->record_file, "D:\\desktop_live.mp4", 20);
+
+	InitLog(LOG_DEBUG, OUT_FILE);
+
+	pCapture = InitCapture(pCaptureConfig);
+	if (NULL == pCapture)
 	{
-		ret = -1;
-		return ret;
+		printf("init capture failed\n");
+		return -1;
 	}
 
-	ret = start_capture(log, config_file);
-	if (0 != ret)
+	pEncoder = InitEncoder(pEncodeConfig);
+	if (NULL == pEncoder)
+	{
+		printf("init encoder failed\n");
+		return -1;
+	}
+
+	ret = StartCapture(pCapture);
+	if (SECCESS != ret)
 	{
 		printf("start capture failed\n");
 		return -1;
 	}
 
-	ret = init_ercoder(log, config_file, record_file, 1);
-	if (ret != 0)
+	while(times < 100)
 	{
-		printf("init encoder failed\n");
-		return -2;
-	}
-	start_time = end_time = timeGetTime();
-	while(10*1000 > (end_time - start_time))
-	{
-		if (0 == get_video_frame(&data, &size, &width, &height))
+		if (SECCESS == GetVideoFrame(pCapture, &data, &size, &width, &height))
 		{
-			ret = encode_video(data, width, height, &dest, &dest_size, &pts, &dts);
-			if (ret != 0)
-			{
-				printf("encode failed : %d\n",ret);
-			}
-			else
+			ret = EncodeVideo(pEncoder, data, width, height, &dest, &dest_size, &pts, &dts);
+			if (ret == SECCESS)
 			{
 				free(dest);
 			}
 
 			times++;
-			printf("count = %d\n", times);
+			printf("video data size = %d\n", size);
 			free(data);
 		}
 
-		if (0 == get_audio_frame(&data, &size))
+		if (SECCESS == GetAudioFrame(pCapture, &data, &size))
 		{
 			ap_len = 0;
-			ret = encode_audio(data, size, ap, &ap_len);
-			if (ret != 0)
-			{
-				printf("encode audio failed\n");
-			}
-			else
+			ret = EncodeAudio(pEncoder, data, size, ap, &ap_len);
+			if (ret == SECCESS)
 			{
 				for (i=0; i<ap_len; i++)
 				{
 					free(ap[i].data);
 				}
 			}
-			
-//			printf("audio data size = %d\n", size);
+
+			printf("audio data size = %d\n", size);
 			free(data);
 		}
-		end_time = timeGetTime();
 	}
 
-	stop_capture();
+	StopCapture(pCapture);
+	FreeCapture(pCapture);
 
-	free_capture();
+	FflushEncoder(pEncoder);
+	FreeEncoder(pEncoder);
 
-	fflush_encoder();
-
-	free_encoder();
-
-	free_log();
-
+	FreeLog();
 	_CrtDumpMemoryLeaks();
 	return 0;
 }

@@ -1,19 +1,6 @@
+#include <Windows.h>
 #include "log.h"
 #include "encode.h"
-
-
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-#include "libavformat/avformat.h"
-#include "libavcodec/avcodec.h"
-#include "libavutil/imgutils.h"
-#include "libavutil/opt.h"
-#include "libswscale/swscale.h"
-#ifdef __cplusplus
-};
-#endif
 
 #pragma comment(lib, "log.lib")
 #pragma comment(lib, "avutil.lib")
@@ -21,201 +8,150 @@ extern "C"
 #pragma comment(lib, "avcodec.lib")
 #pragma comment(lib, "swscale.lib")
 
-typedef struct 
-{
-	void *log;
-	char config_file[MAX_PATH];
-	char record_file[MAX_PATH];
-	int record;
-
-#define VIDEO_STREAM_INDEX 0
-#define AUDIO_STREAM_INDEX 1
-
-	AVFormatContext *fmt_ctx;
-	AVCodecContext *video_codec_ctx;
-	AVStream *video_stream;
-	AVCodec *video_codec;
-	AVPacket video_packet;
-	AVFrame *video_frame;
-	int width;
-	int height;
-	int fps;
-	int bit_rate;
-	int video_pts;
-
-	AVCodecContext *audio_codec_ctx;
-	AVStream *audio_stream;
-	AVCodec *audio_codec;
-	AVPacket audio_packet;
-	AVFrame *audio_frame;
-	int channels;
-	int bits_per_sample;
-	int sample_rate;
-	int avg_bytes_per_sec;
-	int audio_pts;
-}ENCODER;
-
-static ENCODER *s_encoder;
-
-int init_encoder_param(ENCODER *encoder, void *log, char *config_file, char *record_file, int record)
+void InitEncoderParam(PENCODER pEncoder, PENCODECONFIG pEncodeConfig)
 {
 	int size = 0, ret = 0;
-	char log_str[1024] = {0};
+	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log, LOG_DEBUG, log_str);
+	memcpy(pEncoder->record_file, pEncodeConfig->record_file, strlen(pEncodeConfig->record_file));
+	pEncoder->record = pEncodeConfig->record;
 
-	encoder->log = log;
 
-	size = strlen(config_file)+1;
-	memset(encoder->config_file, 0, size);
-	memcpy(encoder->config_file, config_file, size-1);
-	encoder->config_file[size] = '\0';
+	pEncoder->fps = pEncodeConfig->fps;
+	pEncoder->width = pEncodeConfig->width;
+	pEncoder->height = pEncodeConfig->height;
+	pEncoder->bit_rate = pEncodeConfig->bit_rate;
+	pEncoder->video_pts = 0;
 
-	size = strlen(record_file)+1;
-	memset(encoder->record_file, 0, size);
-	memcpy(encoder->record_file, record_file, size-1);
-	encoder->record_file[size] = '\0';
+	pEncoder->channels = pEncodeConfig->channels;
+	pEncoder->bits_per_sample = pEncodeConfig->bits_per_sample;
+	pEncoder->sample_rate = pEncodeConfig->sample_rate;
+	pEncoder->avg_bytes_per_sec = pEncodeConfig->avg_bytes_per_sec;
+	pEncoder->audio_pts = 0;
 
-	encoder->record = record;
-
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log, LOG_DEBUG, log_str);
-	ret = 0;
-	return ret;
+	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 }
 
-int init_encoder_video_param(ENCODER *encoder)
+int CheckParam(PENCODECONFIG pEncodeConfig)
 {
-	char *config_file = encoder->config_file;
-	char log_str[1024] = {0};
-
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-
-	
-	encoder->fps = GetPrivateProfileIntA("encode", "fps", 5, config_file);
-	encoder->width = GetPrivateProfileIntA("encode", "width", 1366, config_file);
-	encoder->height = GetPrivateProfileIntA("encode", "height", 768, config_file);
-	encoder->bit_rate = GetPrivateProfileIntA("encode", "bit_rate", 400000, config_file);
-	encoder->video_pts = 0;
-
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-	return 0;
+	int a = pEncodeConfig->avg_bytes_per_sec;
+	if (NULL == pEncodeConfig||
+		pEncodeConfig->fps <= 0 ||
+		pEncodeConfig->width <= 0 ||
+		pEncodeConfig->height <= 0 ||
+		pEncodeConfig->bit_rate <= 0 ||
+		pEncodeConfig->channels <= 0 ||
+		pEncodeConfig->bits_per_sample <= 0 ||
+		pEncodeConfig->sample_rate <= 0 ||
+		pEncodeConfig->avg_bytes_per_sec <= 0)
+	{
+		return WRONG_PARAM;
+	}
+	return SECCESS;
 }
 
-int init_encoder_audio_param(ENCODER *encoder)
+void Clean(PENCODER pEncoder)
 {
-	char *config_file = encoder->config_file;
-	char log_str[1024] = {0};
+	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
+	if (pEncoder->audio_frame)
+	{
+		av_frame_free(&pEncoder->audio_frame);
+		pEncoder->audio_frame = NULL;
+	}
 
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
+	if (pEncoder->video_frame)
+	{
+		av_frame_free(&pEncoder->video_frame);
+		pEncoder->video_frame = NULL;
+	}
 
-	encoder->channels = GetPrivateProfileIntA("encode", "channels", 2, config_file);
-	encoder->bits_per_sample = GetPrivateProfileIntA("encode", "bits_per_sample", 16, config_file);
-	encoder->sample_rate = GetPrivateProfileIntA("encode", "sample_rate", 48000, config_file);
-	encoder->avg_bytes_per_sec = GetPrivateProfileIntA("encode", "avg_bytes_per_sec", 48000, config_file);
-	encoder->audio_pts = 0;
+	if (pEncoder->video_codec_ctx)
+	{
+		avcodec_close(pEncoder->video_codec_ctx);
+		pEncoder->video_codec_ctx = NULL;
+	}
 
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-	return 0;
+	if (pEncoder->audio_codec_ctx)
+	{
+		avcodec_close(pEncoder->audio_codec_ctx);
+		pEncoder->audio_codec_ctx = NULL;
+	}
+
+	if (pEncoder->fmt_ctx)
+	{
+		avformat_free_context(pEncoder->fmt_ctx);
+		pEncoder->fmt_ctx = NULL;
+	}
+
+	if (pEncoder)
+	{
+		free(pEncoder);
+	}
+	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 }
 
-int init_format_context(ENCODER *encoder)
+int InitFfmpeg(PENCODER pEncoder)
 {
-	int ret = 0;
-	AVFormatContext *fmt_ctx = NULL;
-	char *record_file = encoder->record_file;
-	char log_str[1024] = {0};
-
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-
+	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 	av_register_all();
 
 	//申请格式上下文
-	avformat_alloc_output_context2(&fmt_ctx, NULL, NULL, record_file);
-	if (!fmt_ctx)
+	if (0 > 
+		avformat_alloc_output_context2(&pEncoder->fmt_ctx, NULL, NULL, pEncoder->record_file))
 	{
-		ret = -1;
-		return ret;
+		PRINTLOG(LOG_ERROR, "%s %d avformat_alloc_output_context2 failed\n", __FUNCTION__, __LINE__);
+		return AF_ALLOC_OUTPUT;
 	}
 
-	encoder->fmt_ctx = fmt_ctx;
-
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-	ret = 0;
-	return ret;
-}
-
-int init_video_stream(ENCODER *encoder)
-{
-	int ret = 0;
-	AVStream *stream = NULL;
-	AVCodecContext *codec_ctx = NULL;
-	AVCodec *codec = NULL;
-	int fps = encoder->fps;
-	int width = encoder->width;
-	int height = encoder->height;
-	int bit_rate = encoder->bit_rate;
-	char log_str[1024] = {0};
-
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-
-
-	codec = avcodec_find_encoder(AV_CODEC_ID_H264);
-	if (!codec)
+	//video
+	pEncoder->video_codec = avcodec_find_encoder(AV_CODEC_ID_H264);
+	if (NULL == pEncoder->video_codec)
 	{
-		ret = -1;
-		return ret;
+		PRINTLOG(LOG_ERROR, "%s %d avcodec_find_encoder do not find AV_CODEC_ID_H264 encoder\n",
+			__FUNCTION__, __LINE__);
+		return NOT_FIND_ENCODER;
 	}
 
 	//如果指定编码器，那么也会初始化AVCodecContext的私有部分，否则只初始化通用部分
-	stream = avformat_new_stream(encoder->fmt_ctx, codec);
-	if (!stream)
+	pEncoder->video_stream = avformat_new_stream(pEncoder->fmt_ctx, pEncoder->video_codec);
+	if (NULL == pEncoder->video_stream)
 	{
-		ret = -2;
-		return ret;
+		PRINTLOG(LOG_ERROR, "%s %d avformat_new_stream new video stream failed\n",
+			__FUNCTION__, __LINE__);
+		return NEW_STREAM_FAILED;
 	}
+	pEncoder->video_stream->id = VIDEO_STREAM_INDEX;
+	pEncoder->video_stream->time_base.num = 1;
+	pEncoder->video_stream->time_base.den = 90000;//fps;
 
-	stream->id = VIDEO_STREAM_INDEX;
-	stream->time_base.num = 1;
-	stream->time_base.den = 90000;//fps;
-	codec_ctx = stream->codec;
-	codec_ctx->codec_type = AVMEDIA_TYPE_VIDEO;
-	codec_ctx->width = width;
-	codec_ctx->height = height;
-
+	pEncoder->video_codec_ctx = pEncoder->video_stream->codec;
+	pEncoder->video_codec_ctx->codec_type = AVMEDIA_TYPE_VIDEO;
+	pEncoder->video_codec_ctx->width = pEncoder->width;
+	pEncoder->video_codec_ctx->height = pEncoder->height;
 	//看注释是长宽比，不知道的情况下可以填0
-	codec_ctx->sample_aspect_ratio.num = 0;
-	codec_ctx->sample_aspect_ratio.den = 0;
-
+	pEncoder->video_codec_ctx->sample_aspect_ratio.num = 0;
+	pEncoder->video_codec_ctx->sample_aspect_ratio.den = 0;
 	//视频格式 pix_fmts[0] 就是yuv420p//video_codec_ctx->pix_fmt = video_codec->pix_fmts[0];
-	codec_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
-	codec_ctx->time_base.num = 1;
-	codec_ctx->time_base.den = fps;
-	
+	pEncoder->video_codec_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
+	pEncoder->video_codec_ctx->time_base.num = 1;
+	pEncoder->video_codec_ctx->time_base.den = pEncoder->fps;
 	//组的大小，IDR+n b + n p 等于一组
-	codec_ctx->gop_size = 0;
-	codec_ctx->max_b_frames = 1;
-	codec_ctx->me_range = 16;
-	codec_ctx->bit_rate = bit_rate;//码率
-	codec_ctx->max_qdiff = 3;
-	codec_ctx->qmin = 18;
-	codec_ctx->qmax = 20;//取值可能是0-51 越接近51，视频质量越模糊
-	codec_ctx->qcompress = 0.6;
+	pEncoder->video_codec_ctx->gop_size = 0;
+	pEncoder->video_codec_ctx->max_b_frames = 1;
+	pEncoder->video_codec_ctx->me_range = 16;
+	pEncoder->video_codec_ctx->bit_rate = pEncoder->bit_rate;//码率
+	pEncoder->video_codec_ctx->max_qdiff = 3;
+	pEncoder->video_codec_ctx->qmin = 18;
+	pEncoder->video_codec_ctx->qmax = 20;//取值可能是0-51 越接近51，视频质量越模糊
+	pEncoder->video_codec_ctx->qcompress = 0.6;
 
 	//编码速度快 slower superfast
-	ret = av_opt_set(codec_ctx->priv_data, "preset", "superfast", 0);
-	if (ret < 0)
+	if (0 > 
+		av_opt_set(pEncoder->video_codec_ctx->priv_data, "preset", "superfast", 0))
 	{
-		ret = -3;
-		return ret;
+		PRINTLOG(LOG_ERROR, "%s %d av_opt_set set video codec context's priv_data preset to superfast failed\n",
+			__FUNCTION__, __LINE__);
+		return SET_OPT_FAILED;
 	}
 
 /*	//crf
@@ -225,10 +161,6 @@ int init_video_stream(ENCODER *encoder)
 		ret = -3;
 		return ret;
 	}
-
-
-
-	//add by wht np++
 	//qp
 	ret = av_opt_set(codec_ctx->priv_data, "qp", "0", 0);
 	if (ret < 0)
@@ -238,358 +170,212 @@ int init_video_stream(ENCODER *encoder)
 	}
 */	
 	//不延时，不在编码器内缓冲帧
-	ret = av_opt_set(codec_ctx->priv_data, "tune", "zerolatency", 0);
-	if (ret < 0)
+	if (0 > 
+		av_opt_set(pEncoder->video_codec_ctx->priv_data, "tune", "zerolatency", 0))
 	{
-		ret = -4;
-		return ret;
+		PRINTLOG(LOG_ERROR, "%s %d av_opt_set set video codec context's priv_data tune to zerolatency failed\n",
+			__FUNCTION__, __LINE__);
+		return SET_OPT_FAILED;
 	}
 
 	//打开视频编码器
-	ret = avcodec_open2(codec_ctx, codec, NULL);
-	if (ret < 0)
+	if (0 > 
+		avcodec_open2(pEncoder->video_codec_ctx, pEncoder->video_codec, NULL))
 	{
-		ret = -5;
-		return ret;
+		PRINTLOG(LOG_ERROR, "%s %d avcodec_open2 open video codec failed\n",
+			__FUNCTION__, __LINE__);
+		return OPEN_CODEC_FAILED;
 	}
 
-	if (encoder->fmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
-		codec_ctx->flags |= CODEC_FLAG_GLOBAL_HEADER;
+	if (pEncoder->fmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
+		pEncoder->video_codec_ctx->flags |= CODEC_FLAG_GLOBAL_HEADER;
 
-	encoder->video_stream = stream;
-	encoder->video_codec_ctx = codec_ctx;
-	encoder->video_codec = codec;
-
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-	ret = 0;
-	return ret;
-}
-
-int init_audio_stream(ENCODER *encoder)
-{
-	int ret = 0;
-	AVCodec *codec = NULL;
-	AVStream *stream = NULL;
-	AVCodecContext *codec_ctx = NULL;
-	int sample_rate = encoder->sample_rate;
-	int channels = encoder->channels;
-	int avg_bytes_per_sec = encoder->avg_bytes_per_sec;
-	char log_str[1024] = {0};
-
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-
-	//查找编码器
-	codec = avcodec_find_encoder(AV_CODEC_ID_AAC);
-	if (!codec)
+	pEncoder->audio_codec = avcodec_find_encoder(AV_CODEC_ID_AAC);
+	if (NULL == pEncoder->audio_codec)
 	{
-		ret = -1;
-		return ret;
+		PRINTLOG(LOG_ERROR, "%s %d avcodec_find_encoder do not find AV_CODEC_ID_AAC encoder\n",
+			__FUNCTION__, __LINE__);
+		return NOT_FIND_ENCODER;
 	}
 
-	stream = avformat_new_stream(encoder->fmt_ctx, codec);
-	if (!stream)
+
+	pEncoder->audio_stream = avformat_new_stream(pEncoder->fmt_ctx, pEncoder->audio_codec);
+	if (NULL == pEncoder->audio_stream)
 	{
-		ret = -2;
-		return ret;
+		PRINTLOG(LOG_ERROR, "%s %d avformat_new_stream new audio stream failed\n",
+			__FUNCTION__, __LINE__);
+		return NEW_STREAM_FAILED;
 	}
 
-	stream->id = AUDIO_STREAM_INDEX;
-	stream->time_base.num = 1;
-	stream->time_base.den = sample_rate;
+	pEncoder->audio_stream->id = AUDIO_STREAM_INDEX;
+	pEncoder->audio_stream->time_base.num = 1;
+	pEncoder->audio_stream->time_base.den = pEncoder->sample_rate;
 
-	codec_ctx = stream->codec;
-	codec_ctx->sample_rate = sample_rate;
-	codec_ctx->channel_layout = av_get_default_channel_layout(channels);
-	codec_ctx->channels = channels;
-	codec_ctx->sample_fmt = AV_SAMPLE_FMT_S16;//audio_codec_ctx->sample_fmt = audio_codec->sample_fmts[0];
-	codec_ctx->bit_rate = avg_bytes_per_sec;
-	codec_ctx->time_base.num = 1;
-	codec_ctx->time_base.den = sample_rate;
-	codec_ctx->codec_type = AVMEDIA_TYPE_AUDIO;
-	codec_ctx->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
+	pEncoder->audio_codec_ctx = pEncoder->audio_stream->codec;
+	pEncoder->audio_codec_ctx->sample_rate = pEncoder->sample_rate;
+	pEncoder->audio_codec_ctx->channel_layout = av_get_default_channel_layout(pEncoder->channels);
+	pEncoder->audio_codec_ctx->channels = pEncoder->channels;
+	pEncoder->audio_codec_ctx->sample_fmt = AV_SAMPLE_FMT_S16;//audio_codec_ctx->sample_fmt = audio_codec->sample_fmts[0];
+	pEncoder->audio_codec_ctx->bit_rate = pEncoder->avg_bytes_per_sec;
+	pEncoder->audio_codec_ctx->time_base.num = 1;
+	pEncoder->audio_codec_ctx->time_base.den = pEncoder->sample_rate;
+	pEncoder->audio_codec_ctx->codec_type = AVMEDIA_TYPE_AUDIO;
+	pEncoder->audio_codec_ctx->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
 
-	if (encoder->fmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
-		codec_ctx->flags |= CODEC_FLAG_GLOBAL_HEADER;
+	if (pEncoder->fmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
+		pEncoder->audio_codec_ctx->flags |= CODEC_FLAG_GLOBAL_HEADER;
 
-	ret = avcodec_open2(codec_ctx, codec, NULL);
-	if (ret < 0)
+	if (0 > 
+		avcodec_open2(pEncoder->audio_codec_ctx, pEncoder->audio_codec, NULL))
 	{
-		ret = -3;
-		return ret;
-	}
-
-	encoder->audio_stream = stream;
-	encoder->audio_codec_ctx = codec_ctx;
-	encoder->audio_codec = codec;
-
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-	ret = 0;
-	return ret;
-}
-
-int init_record_file(ENCODER *encoder)
-{
-	int ret = 0;
-	char log_str[1024] = {0};
-
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-	if (encoder->record)
-	{
-		//打开文件
-		if (!(encoder->fmt_ctx->oformat->flags & AVFMT_NOFILE))
-		{
-			ret = avio_open(&encoder->fmt_ctx->pb, encoder->record_file, AVIO_FLAG_WRITE);
-			if (ret < 0) 
-			{
-				ret = -1;
-				return ret;
-			}
-		}
-
-		//容器首部
-		ret = avformat_write_header(encoder->fmt_ctx, NULL);
-		if (ret < 0)
-		{
-			ret = -2;
-			return ret;
-		}
-	}
-
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-	ret = 0;
-	return ret;
-}
-
-int init_video_frame(ENCODER *encoder)
-{
-	int ret = 0;
-	AVFrame *frame = NULL;
-	char log_str[1024] = {0};
-
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-
-	frame = av_frame_alloc();
-	if (!frame)
-	{
-		ret = -1;
-		return ret;
-	}
-
-	frame->format = encoder->video_codec_ctx->pix_fmt;
-	frame->width  = encoder->width;
-	frame->height = encoder->height;
-	ret = av_frame_get_buffer(frame, 32);
-	if (ret < 0)
-	{
-		ret = -2;
-		return ret;
-	}
-
-	frame->linesize[0] = encoder->width;
-	frame->linesize[1] = encoder->width/2;
-	frame->linesize[2] = encoder->width/2;
-
-	encoder->video_frame = frame;
-
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-	ret = 0;
-	return ret;
-}
-
-int init_audio_frame(ENCODER *encoder)
-{
-	int ret = 0;
-	AVFrame *frame = NULL;
-	AVCodecContext *codec_ctx = encoder->audio_codec_ctx;
-	char log_str[1024] = {0};
-
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-	frame = av_frame_alloc();
-	if (!frame)
-	{
-		ret = -1;
-		return ret;
-	}
-
-	frame->nb_samples = codec_ctx->frame_size;
-	frame->channel_layout = codec_ctx->channel_layout;
-	frame->format = codec_ctx->sample_fmt;
-	frame->sample_rate = codec_ctx->sample_rate;
-	ret = av_frame_get_buffer(frame, 32);
-	if (ret < 0)
-	{
-		ret = -2;
-		return ret;
-	}
-
-	encoder->audio_frame = frame;
-
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-	ret = 0;
-	return ret;
-}
-
-int init_ercoder(void *log, char *config_file, char *record_file, int record)
-{
-	int ret;
-	ENCODER *encoder = NULL;
-	char log_str[1024] = {0};
-
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)log, LOG_DEBUG, log_str);
-
-	if (s_encoder || !log || !config_file || !record_file)
-	{
-		ret = -1;
-		return ret;
-	}
-
-	encoder = (ENCODER *)malloc(sizeof(ENCODER));
-	sprintf(log_str, " %s:%d encoder = malloc %d\r\n",__FUNCTION__, __LINE__, sizeof(ENCODER));
-	print_log((LOG *)log, LOG_DEBUG, log_str);
-	if (!encoder)
-	{
-		ret = -2;
-		goto FAILED;
-	}
-
-	ret = init_encoder_param(encoder, log, config_file, record_file, record);
-	if (ret != 0)
-	{
-		ret = -3;
-		goto FAILED;
-	}
-
-	init_encoder_video_param(encoder);
-	init_encoder_audio_param(encoder);
-
-	ret = init_format_context(encoder);
-	if (ret != 0)
-	{
-		ret = -4;
-		goto FAILED;
-	}
-
-	ret = init_video_stream(encoder);
-	if (ret != 0)
-	{
-		ret = -5;
-		return ret;
-	}
-
-	ret = init_audio_stream(encoder);
-	if (ret != 0)
-	{
-		ret = -6;
-		return ret;
+		PRINTLOG(LOG_ERROR, "%s %d avcodec_open2 open audio codec failed\n",
+			__FUNCTION__, __LINE__);
+		return OPEN_CODEC_FAILED;
 	}
 
 	//dump
-	av_dump_format(encoder->fmt_ctx, 0, encoder->record_file, 1);
+	av_dump_format(pEncoder->fmt_ctx, 0, pEncoder->record_file, 1);
 
-	init_record_file(encoder);
-
-	ret = init_video_frame(encoder);
-	if (ret != 0)
+	if (0 != pEncoder->record)
 	{
-		ret = -7;
-		return ret;
+		if (!(pEncoder->fmt_ctx->oformat->flags & AVFMT_NOFILE))
+		{
+			if (0 > 
+				avio_open(&pEncoder->fmt_ctx->pb, pEncoder->record_file, AVIO_FLAG_WRITE))
+			{
+				PRINTLOG(LOG_ERROR, "%s %d avio_open open output file failed\n",
+					__FUNCTION__, __LINE__);
+				return OPEN_OUTPUT_FILE_FAILED;
+			}
+		}
+		if (0 > 
+			avformat_write_header(pEncoder->fmt_ctx, NULL))
+		{
+			PRINTLOG(LOG_ERROR, "%s %d avformat_write_header failed\n",
+				__FUNCTION__, __LINE__);
+			return WRITE_HEADER_FAILED;
+		}
 	}
 
-	ret = init_audio_frame(encoder);
-	if (ret != 0)
+	pEncoder->video_frame = av_frame_alloc();
+	if (NULL == pEncoder->video_frame)
 	{
-		ret = -8;
-		return ret;
+		PRINTLOG(LOG_ERROR, "%s %d av_frame_alloc alloc video frame failed\n",
+			__FUNCTION__, __LINE__);
+		return ALLOC_FRAME_FAILED;
 	}
 
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-	s_encoder = encoder;
-	ret = 0;
-	return ret;
+	pEncoder->video_frame->format = pEncoder->video_codec_ctx->pix_fmt;
+	pEncoder->video_frame->width  = pEncoder->width;
+	pEncoder->video_frame->height = pEncoder->height;
 
-FAILED:
-
-	if (encoder->audio_frame)
+	if(0 < 
+		av_frame_get_buffer(pEncoder->video_frame, 32))
 	{
-		av_frame_free(&encoder->audio_frame);
-		encoder->audio_frame = NULL;
+		PRINTLOG(LOG_ERROR, "%s %d av_frame_get_buffer video frame buffer failed\n",
+			__FUNCTION__, __LINE__);
+		return GET_FRAME_BUFFER_FAILED;
 	}
 
-	if (encoder->video_frame)
+	pEncoder->video_frame->linesize[0] = pEncoder->width;
+	pEncoder->video_frame->linesize[1] = pEncoder->width/2;
+	pEncoder->video_frame->linesize[2] = pEncoder->width/2;
+
+	pEncoder->audio_frame = av_frame_alloc();
+	if (NULL == pEncoder->audio_frame)
 	{
-		av_frame_free(&encoder->video_frame);
-		encoder->video_frame = NULL;
+		PRINTLOG(LOG_ERROR, "%s %d av_frame_alloc alloc audio frame failed\n",
+			__FUNCTION__, __LINE__);
+		return ALLOC_FRAME_FAILED;
 	}
 
-	if (encoder->video_codec_ctx)
+	pEncoder->audio_frame->nb_samples = pEncoder->audio_codec_ctx->frame_size;
+	pEncoder->audio_frame->channel_layout = pEncoder->audio_codec_ctx->channel_layout;
+	pEncoder->audio_frame->format = pEncoder->audio_codec_ctx->sample_fmt;
+	pEncoder->audio_frame->sample_rate = pEncoder->audio_codec_ctx->sample_rate;
+	if (0 > 
+		av_frame_get_buffer(pEncoder->audio_frame, 32))
 	{
-		avcodec_close(encoder->video_codec_ctx);
-		encoder->video_codec_ctx = NULL;
+		PRINTLOG(LOG_ERROR, "%s %d av_frame_get_buffer audio frame buffer failed\n",
+			__FUNCTION__, __LINE__);
+		return GET_FRAME_BUFFER_FAILED;
 	}
 
-	if (encoder->audio_codec_ctx)
-	{
-		avcodec_close(encoder->audio_codec_ctx);
-		encoder->audio_codec_ctx = NULL;
-	}
-
-	if (encoder->fmt_ctx)
-	{
-		avformat_free_context(encoder->fmt_ctx);
-		encoder->fmt_ctx = NULL;
-	}
-
-	if (encoder)
-	{
-		free(encoder);
-		s_encoder = NULL;
-	}
-
-	return ret;
+	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
+	return SECCESS;
 }
 
-int encode_video(void *source, int source_width, int source_height,
+PENCODER InitEncoder(PENCODECONFIG pEncodeConfig)
+{
+	PENCODER pEncoder = NULL;
+	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
+
+	if (SECCESS != CheckParam(pEncodeConfig))
+	{
+		PRINTLOG(LOG_ERROR, "%s %d pEncodeConfig param error\n", __FUNCTION__, __LINE__);
+		return NULL;
+	}
+
+	pEncoder = (PENCODER)malloc(sizeof(ENCODER));
+	if (NULL == pEncoder)
+	{
+		PRINTLOG(LOG_ERROR, "%s %d pEncoder malloc failed\n", __FUNCTION__, __LINE__);
+		return NULL;
+	}
+	PRINTLOG(LOG_DEBUG, "pEncoder malloc %d\n", sizeof(ENCODER));
+	memset(pEncoder, 0, sizeof(ENCODER));
+
+	InitEncoderParam(pEncoder, pEncodeConfig);
+
+	if (SECCESS != InitFfmpeg(pEncoder))
+	{
+		PRINTLOG(LOG_ERROR, "%s %d InitFfmpeg failed\n", __FUNCTION__, __LINE__);
+		Clean(pEncoder);
+		return NULL;
+	}
+	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
+	return pEncoder;
+}
+
+void FreeFrameAndSwsContext(AVFrame *frame, struct SwsContext *sws_ctx)
+{
+	if (frame)
+		av_frame_free(&frame);
+	if (sws_ctx)
+		sws_freeContext(sws_ctx);
+}
+
+int EncodeVideo(PENCODER pEncoder, void *source, int source_width, int source_height,
 	void **dest, unsigned long *dest_size, long long *pts, long long *dts)
 {
 	int ret = 0;
 	AVFrame *frame = NULL;
-	ENCODER *encoder = s_encoder;
 	struct SwsContext *sws_ctx = NULL;
 	int got_frame;
 
-	if (!encoder || !source || !dest || !dest_size || !pts || !dts)
+	if (!pEncoder || !source || !dest || !dest_size || !pts || !dts)
 	{
-		ret = -1;
-		return ret;
+		PRINTLOG(LOG_ERROR, "%s %d Wrong param\n", __FUNCTION__, __LINE__);
+		return WRONG_PARAM;
 	}
 
 	//生成source frame
 	frame = av_frame_alloc();
-	if (!frame)
+	if (NULL == frame)
 	{
-		ret = -2;
-		goto FAILED;
+		PRINTLOG(LOG_ERROR, "%s %d av_frame_alloc failed\n", __FUNCTION__, __LINE__);
+		return ALLOC_FRAME_FAILED;
 	}
 
-	frame->format = encoder->video_codec_ctx->pix_fmt;
+	frame->format = pEncoder->video_codec_ctx->pix_fmt;
 	frame->width  = source_width;
 	frame->height = source_height;
 	ret = av_frame_get_buffer(frame, 32);
 	if (ret < 0)
 	{
-		ret = -2;
-		goto FAILED;
+		PRINTLOG(LOG_ERROR, "%s %d av_frame_alloc failed\n", __FUNCTION__, __LINE__);
+		FreeFrameAndSwsContext(frame, sws_ctx);
+		return GET_FRAME_BUFFER_FAILED;
 	}
 	frame->linesize[0] = source_width;
 	frame->linesize[1] = source_width/2;
@@ -602,213 +388,198 @@ int encode_video(void *source, int source_width, int source_height,
 //	printf("pts = %d\n", frame->pts);
 
 	//初始化格式转换上下文
-	sws_ctx = sws_getContext(source_width, source_height, encoder->video_codec_ctx->pix_fmt,
-		encoder->width, encoder->height, encoder->video_codec_ctx->pix_fmt,
+	sws_ctx = sws_getContext(source_width, source_height, pEncoder->video_codec_ctx->pix_fmt,
+		pEncoder->width, pEncoder->height, pEncoder->video_codec_ctx->pix_fmt,
 		SWS_BILINEAR, NULL, NULL, NULL);
 	if (!sws_ctx)
 	{
-		ret = -3;
-		goto FAILED;
+		PRINTLOG(LOG_ERROR, "%s %d sws_getContext failed\n", __FUNCTION__, __LINE__);
+		FreeFrameAndSwsContext(frame, sws_ctx);
+		return SWS_GET_CONTEXT_FAILED;
 	}
 
 	//转换
 	ret = sws_scale(sws_ctx, (const uint8_t * const*)frame->data,
 						frame->linesize, 0, source_height, 
-						encoder->video_frame->data, encoder->video_frame->linesize);
-	encoder->video_frame->pts = encoder->video_pts++;
+						pEncoder->video_frame->data, pEncoder->video_frame->linesize);
+	pEncoder->video_frame->pts = pEncoder->video_pts++;
 	if (ret < 0)
 	{
-		ret = -4;
-		goto FAILED;
+		PRINTLOG(LOG_ERROR, "%s %d sws_scale failed\n", __FUNCTION__, __LINE__);
+		FreeFrameAndSwsContext(frame, sws_ctx);
+		return SWS_SCALE_FAILED;
 	}
 
 	//初始化packet
-	av_init_packet(&encoder->video_packet);
-	encoder->video_packet.data = NULL;
-	encoder->video_packet.size = 0;
+	av_init_packet(&pEncoder->video_packet);
+	pEncoder->video_packet.data = NULL;
+	pEncoder->video_packet.size = 0;
 
-	ret = avcodec_encode_video2(encoder->video_codec_ctx, &encoder->video_packet, 
-								encoder->video_frame, 
+	ret = avcodec_encode_video2(pEncoder->video_codec_ctx, &pEncoder->video_packet, 
+								pEncoder->video_frame, 
 								//frame,
 								&got_frame);
 	if (ret < 0)
 	{
-		ret = -5;
-		goto FAILED;
+		PRINTLOG(LOG_ERROR, "%s %d avcodec_encode_video2 failed\n", __FUNCTION__, __LINE__);
+		FreeFrameAndSwsContext(frame, sws_ctx);
+		return ENCODE_VIDEO_FRAME_FAILED;
 	}
+
 	if (got_frame)
 	{
-		encoder->video_packet.stream_index = encoder->video_stream->index;
-		av_packet_rescale_ts(&encoder->video_packet, encoder->video_codec_ctx->time_base,
-								encoder->video_stream->time_base);
-		if (encoder->record)
+		pEncoder->video_packet.stream_index = pEncoder->video_stream->index;
+		av_packet_rescale_ts(&pEncoder->video_packet, pEncoder->video_codec_ctx->time_base,
+								pEncoder->video_stream->time_base);
+		if (pEncoder->record)
 		{
-			ret = av_write_frame(encoder->fmt_ctx, &encoder->video_packet);
+			ret = av_write_frame(pEncoder->fmt_ctx, &pEncoder->video_packet);
 			if (ret < 0)
 			{
-				ret = -6;
-				goto FAILED;
+				PRINTLOG(LOG_ERROR, "%s %d av_write_frame failed\n", __FUNCTION__, __LINE__);
+				FreeFrameAndSwsContext(frame, sws_ctx);
+				return WRITE_FRAME_FAILED;
 			}
 		}
 
-		*dest_size = encoder->video_packet.size;
-		*pts = (float)encoder->video_packet.pts / encoder->video_stream->time_base.den * 90000;
+		*dest_size = pEncoder->video_packet.size;
+		*pts = (float)pEncoder->video_packet.pts / pEncoder->video_stream->time_base.den * 90000;
 		//*pts = encoder->video_packet.pts;
 		//*dts = encoder->video_packet.dts;
 		*dest = (void *)malloc(*dest_size);
 		if (!dest)
 		{
-			ret = -7;
-			goto FAILED;
+			PRINTLOG(LOG_ERROR, "%s %d malloc *dest failed\n", __FUNCTION__, __LINE__);
+			FreeFrameAndSwsContext(frame, sws_ctx);
+			return MALLOCFAILED;
 		}
-		memcpy(*dest, encoder->video_packet.data, *dest_size);
-	
-		if (frame)
-			av_frame_free(&frame);
-		if (sws_ctx)
-			sws_freeContext(sws_ctx);
-
-		ret = 0;
-		return ret;
+		memcpy(*dest, pEncoder->video_packet.data, *dest_size);
+		FreeFrameAndSwsContext(frame, sws_ctx);
+		return SECCESS;
 	}
 
-	ret = -8;
-
-FAILED:
-	if (frame)
-		av_frame_free(&frame);
-	if (sws_ctx)
-		sws_freeContext(sws_ctx);
-
-	return ret;
-
+	return NOT_GET_PACKET;
 }
 
-int encode_audio(void *source, unsigned long source_size,
-					AUDIO_PACKET *ap, int *ap_len)
+int EncodeAudio(PENCODER pEncoder, void *source, unsigned long source_size, 
+						PAUDIOPACKET pAudioPacket, int *ap_len)
 {
 	int ret = 0;
 	uint8_t *pcm = (uint8_t *)source;
 	long pcm_len = source_size;
-	ENCODER *encoder = s_encoder;
-	int channels = encoder->channels;
-	int byte_per_sample = encoder->bits_per_sample / 8;
+	int channels = pEncoder->channels;
+	int byte_per_sample = pEncoder->bits_per_sample / 8;
 	int got_frame = 0;
 	int len = 0;
 
-	if (!encoder)
+	if (NULL == pEncoder ||
+		NULL == source)
 	{
-		ret = -1;
-		return ret;
+		PRINTLOG(LOG_ERROR, "%s %d Wrong param\n", __FUNCTION__, __LINE__);
+		return WRONG_PARAM;
 	}
 
 	while (pcm_len > 0)
 	{
-		encoder->audio_frame->nb_samples = FFMIN(encoder->audio_codec_ctx->frame_size, pcm_len);
-		av_init_packet(&encoder->audio_packet);
-		encoder->audio_packet.data = NULL;
-		encoder->audio_packet.size = 0;
+		pEncoder->audio_frame->nb_samples = FFMIN(pEncoder->audio_codec_ctx->frame_size, pcm_len);
+		av_init_packet(&pEncoder->audio_packet);
+		pEncoder->audio_packet.data = NULL;
+		pEncoder->audio_packet.size = 0;
 
-		encoder->audio_frame->pts = encoder->audio_pts;
-		encoder->audio_pts += encoder->audio_frame->nb_samples;
+		pEncoder->audio_frame->pts = pEncoder->audio_pts;
+		pEncoder->audio_pts += pEncoder->audio_frame->nb_samples;
 
-		memcpy(encoder->audio_frame->data[0], pcm, 
-					encoder->audio_frame->nb_samples * channels * byte_per_sample);
-		pcm += encoder->audio_frame->nb_samples * channels * byte_per_sample;
+		memcpy(pEncoder->audio_frame->data[0], pcm, 
+					pEncoder->audio_frame->nb_samples * channels * byte_per_sample);
+		pcm += pEncoder->audio_frame->nb_samples * channels * byte_per_sample;
 
-		ret = avcodec_encode_audio2(encoder->audio_codec_ctx, &encoder->audio_packet,
-									encoder->audio_frame, &got_frame);
+		ret = avcodec_encode_audio2(pEncoder->audio_codec_ctx, &pEncoder->audio_packet,
+									pEncoder->audio_frame, &got_frame);
 		if (ret < 0)
 		{
-			ret = -2;
-			return ret;
+			PRINTLOG(LOG_ERROR, "%s %d Wrong param\n", __FUNCTION__, __LINE__);
+			return ENCODE_AUDIO_FRAME_FAILED;
 		}
 
 		if (got_frame)
 		{
-			encoder->audio_packet.stream_index = encoder->audio_stream->index;
-			av_packet_rescale_ts(&encoder->audio_packet, 
-									encoder->audio_codec_ctx->time_base,
-									encoder->audio_stream->time_base);
-			if (encoder->record)
+			pEncoder->audio_packet.stream_index = pEncoder->audio_stream->index;
+			av_packet_rescale_ts(&pEncoder->audio_packet, 
+									pEncoder->audio_codec_ctx->time_base,
+									pEncoder->audio_stream->time_base);
+			if (pEncoder->record)
 			{
-				ret = av_write_frame(encoder->fmt_ctx, &encoder->audio_packet);
+				ret = av_write_frame(pEncoder->fmt_ctx, &pEncoder->audio_packet);
 				if (ret < 0)
 				{
-					ret = -3;
-					return ret;
+					PRINTLOG(LOG_ERROR, "%s %d av_write_frame failed\n", __FUNCTION__, __LINE__);
+					return WRITE_FRAME_FAILED;
 				}
 			}
 
 			len = *ap_len;
 
-			ap[len].size = encoder->audio_packet.size;
-			ap[len].pts = encoder->audio_packet.pts;
-			ap[len].dts = encoder->audio_packet.dts;
-			ap[len].data = (void *)malloc(ap[*ap_len].size);
-			if (NULL == ap[len].data)
+			pAudioPacket[len].size = pEncoder->audio_packet.size;
+			pAudioPacket[len].pts = pEncoder->audio_packet.pts;
+			pAudioPacket[len].dts = pEncoder->audio_packet.dts;
+			pAudioPacket[len].data = (void *)malloc(pAudioPacket[*ap_len].size);
+			if (NULL == pAudioPacket[len].data)
 			{
-				ret = -4;
-				return ret;
+				PRINTLOG(LOG_ERROR, "%s %d malloc *dest failed\n", __FUNCTION__, __LINE__);
+				return MALLOCFAILED;
 			}
-			if (encoder->fmt_ctx->streams[1]->codec->extradata_size == 0)
+			if (pEncoder->fmt_ctx->streams[AUDIO_STREAM_INDEX]->codec->extradata_size == 0)
 			{
-				ap[len].size -= 7;
-				memcpy(ap[len].data, encoder->audio_packet.data + 7, ap[len].size);
+				pAudioPacket[len].size -= 7;
+				memcpy(pAudioPacket[len].data, pEncoder->audio_packet.data + 7, pAudioPacket[len].size);
 			}
 			else
 			{
-				memcpy(ap[len].data, encoder->audio_packet.data, ap[len].size);
+				memcpy(pAudioPacket[len].data, pEncoder->audio_packet.data, pAudioPacket[len].size);
 			}
 			
 
 			(*ap_len)++;
 		}
-		pcm_len -= encoder->audio_frame->nb_samples * channels * byte_per_sample;
+		pcm_len -= pEncoder->audio_frame->nb_samples * channels * byte_per_sample;
 	}
 
-	ret = 0;
-	return ret;
+	return SECCESS;
 }
 
-int fflush_encoder()
+int FflushEncoder(PENCODER pEncoder)
 {
-	int ret = 0;
-	ENCODER *encoder = s_encoder;
 	int got_frame;
-	char log_str[1024] = {0};
+	PRINTLOG(LOG_DEBUG, ">>%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
 
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-	if (!encoder)
+	if (NULL == pEncoder)
 	{
-		ret = -3;
-		return ret;
+		PRINTLOG(LOG_ERROR, "%s %d\n pEncoder is NULL", __FUNCTION__, __LINE__);
+		return WRONG_PARAM;
 	}
 
 	//刷新视频编码器内部的延时帧数据
 	while (1)
 	{
-		av_init_packet(&encoder->video_packet);
-		encoder->video_packet.data = NULL;
-		encoder->video_packet.size = 0;
-		ret = avcodec_encode_video2(encoder->video_codec_ctx, &encoder->video_packet, NULL, &got_frame);
-		if (ret < 0) { break; }	
+		av_init_packet(&pEncoder->video_packet);
+		pEncoder->video_packet.data = NULL;
+		pEncoder->video_packet.size = 0;
+		if (0 > avcodec_encode_video2(pEncoder->video_codec_ctx, &pEncoder->video_packet, NULL, &got_frame))
+			break;
+
 		if (got_frame)
 		{
-			encoder->video_packet.stream_index = encoder->video_stream->index;
-			av_packet_rescale_ts(&encoder->video_packet, encoder->video_codec_ctx->time_base,
-									encoder->video_stream->time_base);
-			if (encoder->record)
+			pEncoder->video_packet.stream_index = pEncoder->video_stream->index;
+			av_packet_rescale_ts(&pEncoder->video_packet, pEncoder->video_codec_ctx->time_base,
+									pEncoder->video_stream->time_base);
+			if (pEncoder->record)
 			{
-				ret = av_write_frame(encoder->fmt_ctx, &encoder->video_packet);
-				if (ret < 0)
+				if (0 > av_write_frame(pEncoder->fmt_ctx, &pEncoder->video_packet))
 				{
-					ret = -1;
-					return ret;
+					PRINTLOG(LOG_ERROR, "%s %d\n av_write_frame video failed", __FUNCTION__, __LINE__);
+					return WRITE_FRAME_FAILED;
 				}
 			}
-
 		}
 		else
 		{
@@ -819,26 +590,25 @@ int fflush_encoder()
 	//刷新音频编码器内部的延时帧数据
 	while (1)
 	{
-		av_init_packet(&encoder->audio_packet);
-		encoder->audio_packet.data = NULL;
-		encoder->audio_packet.size = 0;
-		ret = avcodec_encode_audio2(encoder->audio_codec_ctx, &encoder->audio_packet, NULL, &got_frame);
-		if (ret < 0) { break; }	
+		av_init_packet(&pEncoder->audio_packet);
+		pEncoder->audio_packet.data = NULL;
+		pEncoder->audio_packet.size = 0;
+		if (0 > avcodec_encode_audio2(pEncoder->audio_codec_ctx, &pEncoder->audio_packet, NULL, &got_frame))
+			break;
+
 		if (got_frame)
 		{
-			encoder->audio_packet.stream_index = encoder->audio_stream->index;
-			av_packet_rescale_ts(&encoder->audio_packet, encoder->audio_codec_ctx->time_base,
-									encoder->audio_stream->time_base);
-			if (encoder->record)
+			pEncoder->audio_packet.stream_index = pEncoder->audio_stream->index;
+			av_packet_rescale_ts(&pEncoder->audio_packet, pEncoder->audio_codec_ctx->time_base,
+									pEncoder->audio_stream->time_base);
+			if (pEncoder->record)
 			{
-				ret = av_write_frame(encoder->fmt_ctx, &encoder->audio_packet);
-				if (ret < 0)
+				if (0 >av_write_frame(pEncoder->fmt_ctx, &pEncoder->audio_packet))
 				{
-					ret = -2;
-					return ret;
+					PRINTLOG(LOG_ERROR, "%s %d\n av_write_frame audio failed", __FUNCTION__, __LINE__);
+					return WRITE_FRAME_FAILED;
 				}
 			}
-
 		}
 		else
 		{
@@ -846,70 +616,25 @@ int fflush_encoder()
 		}
 	}
 
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-	ret = 0;
-	return ret;
+	PRINTLOG(LOG_DEBUG, "<<%s %s %d\n",__FILE__, __FUNCTION__, __LINE__);
+	return SECCESS;
 }
 
-int free_encoder()
+int FreeEncoder(PENCODER pEncoder)
 {
 	int ret = 0;
-	ENCODER *encoder = s_encoder;
-	char log_str[1024] = {0};
 
-	sprintf(log_str, ">>%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-	if (!encoder)
+	if (NULL == pEncoder)
 	{
-		ret = -1;
-		return ret;
+		PRINTLOG(LOG_ERROR, "%s %d\n pEncoder is NULL", __FUNCTION__, __LINE__);
+		return WRONG_PARAM;
 	}
 
-	if (encoder->record)
+	if (pEncoder->record)
 	{
-		av_write_trailer(encoder->fmt_ctx);
+		av_write_trailer(pEncoder->fmt_ctx);
 	}
 
-	if (encoder->audio_frame)
-	{
-		av_frame_free(&encoder->audio_frame);
-		encoder->audio_frame = NULL;
-	}
-
-	if (encoder->video_frame)
-	{
-		av_frame_free(&encoder->video_frame);
-		encoder->video_frame = NULL;
-	}
-
-	if (encoder->video_codec_ctx)
-	{
-		avcodec_close(encoder->video_codec_ctx);
-		encoder->video_codec_ctx = NULL;
-	}
-
-	if (encoder->audio_codec_ctx)
-	{
-		avcodec_close(encoder->audio_codec_ctx);
-		encoder->audio_codec_ctx = NULL;
-	}
-
-	if (encoder->fmt_ctx)
-	{
-		avformat_free_context(encoder->fmt_ctx);
-		encoder->fmt_ctx = NULL;
-	}
-
-	sprintf(log_str, "<<%s:%d\r\n",__FUNCTION__, __LINE__);
-	print_log((LOG *)encoder->log, LOG_DEBUG, log_str);
-
-	if (encoder)
-	{
-		free(encoder);
-		s_encoder = NULL;
-	}
-
-	ret = 0;
-	return ret;
+	Clean(pEncoder);
+	return SECCESS;
 }

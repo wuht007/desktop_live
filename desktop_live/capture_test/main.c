@@ -1,10 +1,10 @@
-#include "capture.h"
-#include "log.h"
+#include <Windows.h>
 #include <stdio.h>
 #include <stdlib.h>
 #define _CRTDBG_MAP_ALLOC
 #include <crtdbg.h>
-
+#include "capture.h"
+#include "log.h"
 #pragma comment(lib, "capture.lib")
 #pragma comment(lib, "log.lib")
 
@@ -18,57 +18,49 @@ int main(int argc, char **argv)
 	int height = 0;
 	CAPTURECONFIG captureConfig;
 	PCAPTURECONFIG pCaptureConfig = &captureConfig;
-	pCaptureConfig->fps = 10;
+	PCAPTURE pCapture;
+	pCaptureConfig->fps = 5;
 	pCaptureConfig->channels = 2;
 	pCaptureConfig->bits_per_sample = 16;
 	pCaptureConfig->samples_per_sec = 48000;
 	pCaptureConfig->avg_bytes_per_sec = 48000;
 
-	InitLog(LOG_INFO, OUT_FILE);
+	InitLog(LOG_DEBUG, OUT_FILE);
 
-	ret = InitCapture(pCaptureConfig);
-	if (SECCESS != ret)
+	pCapture = InitCapture(pCaptureConfig);
+	if (NULL == pCapture)
 	{
-		printf("start capture failed\n");
+		printf("init capture failed\n");
 		return -1;
 	}
 
-	ret = StartCapture();
+	ret = StartCapture(pCapture);
 	if (SECCESS != ret)
 	{
 		printf("start capture failed\n");
 		return -1;
 	}
 /*
-		StopCapture();
-
-		ret = StartCapture();
-		if (SECCESS != ret)
-		{
-			printf("start capture failed\n");
-			return -1;
-		}
-*/
 	while(times < 100)
 	{
-		if (SECCESS == GetVideoFrame(&data, &size, &width, &height))
+		if (SECCESS == GetVideoFrame(pCapture, &data, &size, &width, &height))
 		{
 			times++;
 			printf("video data size = %d\n", size);
 			free(data);
 		}
 
-		if (SECCESS == GetAudioFrame(&data, &size))
+		if (SECCESS == GetAudioFrame(pCapture, &data, &size))
 		{
 			printf("audio data size = %d\n", size);
 			free(data);
 		}
 	}
-	
+*/
+	Sleep(20000);
 
-	StopCapture();
-	
-	FreeCapture();
+	StopCapture(pCapture);
+	FreeCapture(pCapture);
 
 	FreeLog();
 	_CrtDumpMemoryLeaks();
