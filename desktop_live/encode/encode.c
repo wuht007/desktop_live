@@ -135,6 +135,7 @@ int InitFfmpeg(PENCODER pEncoder)
 	pEncoder->video_codec_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
 	pEncoder->video_codec_ctx->time_base.num = 1;
 	pEncoder->video_codec_ctx->time_base.den = pEncoder->fps;
+	pEncoder->video_codec_ctx->ticks_per_frame = 2;
 	//组的大小，IDR+n b + n p 等于一组
 	pEncoder->video_codec_ctx->gop_size = 0;
 	pEncoder->video_codec_ctx->max_b_frames = 1;
@@ -147,28 +148,31 @@ int InitFfmpeg(PENCODER pEncoder)
 
 	//编码速度快 slower superfast
 	if (0 > 
-		av_opt_set(pEncoder->video_codec_ctx->priv_data, "preset", "superfast", 0))
+		av_opt_set(pEncoder->video_codec_ctx->priv_data, "preset", "slower", 0))
 	{
 		PRINTLOG(LOG_ERROR, "%s %d av_opt_set set video codec context's priv_data preset to superfast failed\n",
 			__FUNCTION__, __LINE__);
 		return SET_OPT_FAILED;
 	}
 
-/*	//crf
-	ret = av_opt_set(codec_ctx->priv_data, "crf", "18", 0);
-	if (ret < 0)
+	//crf
+
+	if (0 > 
+		av_opt_set(pEncoder->video_codec_ctx->priv_data, "crf", "18", 0))
 	{
-		ret = -3;
-		return ret;
+		PRINTLOG(LOG_ERROR, "%s %d av_opt_set set video codec context's priv_data crf to 18 failed\n",
+			__FUNCTION__, __LINE__);
+		return SET_OPT_FAILED;
 	}
+
 	//qp
-	ret = av_opt_set(codec_ctx->priv_data, "qp", "0", 0);
-	if (ret < 0)
+	if(0 > av_opt_set(pEncoder->video_codec_ctx->priv_data, "qp", "0", 0))
 	{
-		ret = -3;
-		return ret;
+		PRINTLOG(LOG_ERROR, "%s %d av_opt_set set video codec context's priv_data qp to 0 failed\n",
+			__FUNCTION__, __LINE__);
+		return SET_OPT_FAILED;
 	}
-*/	
+	
 	//不延时，不在编码器内缓冲帧
 	if (0 > 
 		av_opt_set(pEncoder->video_codec_ctx->priv_data, "tune", "zerolatency", 0))

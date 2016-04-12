@@ -331,6 +331,7 @@ unsigned int __stdcall VideoCaptureProc(void *p)
 
 	WaitForSingleObject(pCapture->hEvent[VIDEO_INDEX], INFINITE);
 	timeKillEvent(timer_id);
+	Sleep(100);
 
 	free(pCapture->video.yuv);
 	PRINTLOG(LOG_DEBUG, "free video.yuv\n");

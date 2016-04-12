@@ -34,15 +34,16 @@ int main(int argc, char **argv)
 	PENCODECONFIG pEncodeConfig = &encodeConfig;
 	PENCODER pEncoder;
 	PCAPTURE pCapture;
-	pCaptureConfig->fps = 6;
+	DWORD start_time, end_time;
+	pCaptureConfig->fps = 5;
 	pCaptureConfig->channels = 2;
 	pCaptureConfig->bits_per_sample = 16;
 	pCaptureConfig->samples_per_sec = 48000;
 	pCaptureConfig->avg_bytes_per_sec = 48000;
 
-	pEncodeConfig->fps = 6;
-	pEncodeConfig->width = 720;
-	pEncodeConfig->height = 480;
+	pEncodeConfig->fps = 5;
+	pEncodeConfig->width = 1366;
+	pEncodeConfig->height = 768;
 	pEncodeConfig->bit_rate = 400000;
 	pEncodeConfig->channels = 2;
 	pEncodeConfig->bits_per_sample = 16;
@@ -75,7 +76,8 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	while(times < 100)
+	start_time = end_time = timeGetTime();
+	while(10*1000 > (end_time - start_time))
 	{
 		if (SECCESS == GetVideoFrame(pCapture, &data, &size, &width, &height))
 		{
@@ -105,6 +107,8 @@ int main(int argc, char **argv)
 			printf("audio data size = %d\n", size);
 			free(data);
 		}
+
+		end_time = timeGetTime();
 	}
 
 	StopCapture(pCapture);

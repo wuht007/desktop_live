@@ -496,9 +496,7 @@ int main(int argc, char **argv)
 {
 	int ret = 0;
 	SERVER server = {0};
-	LOG *log = NULL;
 	struct list_head rtsp_head = {0};
-	char log_str[1024] = {0};
 
 	ret = get_config_file(&server);
 	if (ret != 0)
